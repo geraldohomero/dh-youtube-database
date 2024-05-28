@@ -1,2 +1,3 @@
 # dh-youtube-research
-Digital Humanities Youtube Research Tool
+
+Digital Humanities Youtube Research Database
