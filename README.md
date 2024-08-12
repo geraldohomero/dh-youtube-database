@@ -21,3 +21,9 @@ Essa base de dados irá contar com as seguintes ferramentas para análise
 - Conteúdo dos comentários 
 - Número de likes dos comentários 
 
+
+`keys.py`
+
+```python
+YOUTUBE_DATA_V3 = <API KEY>
+```
