@@ -1,8 +1,16 @@
 import requests
 import json
 import csv
-from keys import YOUTUBE_DATA_V3
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+YOUTUBE_DATA_V3 = os.getenv('YOUTUBE_DATA_V3')
+
+if not YOUTUBE_DATA_V3:
+    raise ValueError("YOUTUBE_DATA_V3 não está definido no arquivo .env")
+    
 def get_all_video_in_channel(channel_name, channel_id):
     api_key = YOUTUBE_DATA_V3
 

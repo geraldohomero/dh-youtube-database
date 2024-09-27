@@ -21,9 +21,8 @@ Essa base de dados irá contar com as seguintes ferramentas para análise
 - Conteúdo dos comentários 
 - Número de likes dos comentários 
 
-
-`keys.py`
+> Arquivo `.env`:
 
 ```python
-YOUTUBE_DATA_V3 = <API KEY>
+YOUTUBE_DATA_V3 = <API_KEY>
 ```
