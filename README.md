@@ -1,6 +1,6 @@
 # dh-youtube-research
 
-Digital Humanities Youtube Research Database
+Digital Humanities Youtube Research Database (PhD Research Proposal)
 
 ## Base de dados
 
