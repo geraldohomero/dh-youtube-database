@@ -24,3 +24,6 @@ Essa base de dados irá contar com as seguintes ferramentas para análise
 ```python
 YOUTUBE_DATA_V3 = <API_KEY>
 ```
+## ER Diagrama
+
+![image](https://github.com/user-attachments/assets/0f9b9e7a-a732-41de-9b52-29d5612150f4)
