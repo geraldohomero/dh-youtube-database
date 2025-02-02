@@ -28,3 +28,7 @@ data/processed/
 .ipynb_checkpoints/
 
 # Any other files or directories you want to ignore
+
+# Ignore all database files
+*.sqlite3
+*.db

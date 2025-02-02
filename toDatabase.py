@@ -1,22 +1,23 @@
-import mysql.connector
+import sqlite3
 from googleapiclient.discovery import build
 from datetime import datetime
 import time
+from sqlite3 import Date, register_adapter
 
 # Configuration
-API_KEY = "#"
-CHANNEL_IDS = ["#"]
+API_KEY = "x"
+CHANNEL_IDS = ["x"]
 
 # Database configuration
-DB_CONFIG = {
-    "user": "root",
-    "password": "#",
-    "host": "localhost",
-    "database": "YouTubeStats"
-}
+DB_CONFIG = "./db/YouTubeStats.sqlite3"
 
 # Initialize YouTube API
 youtube = build('youtube', 'v3', developerKey=API_KEY)
+
+def adapt_date(date):
+    return date.isoformat()
+
+register_adapter(datetime.date, adapt_date)
 
 def get_channel_details(channel_id):
     """Fetch channel details"""
@@ -176,22 +177,26 @@ def get_channel_videos(channel_id):
 def save_to_database(conn, cursor, channel_data, video_data, comments):
     """Save all collected data to database"""
     try:
+        # Convert dates to ISO format strings before saving
+        channel_collected_date = channel_data['dayCollected'].isoformat()
+        video_collected_date = video_data['collectedDate'].isoformat()
+        
         # Save channel data
         cursor.execute("""
             INSERT INTO Channels (
                 channelId, channelName, dayCollected, 
                 numberOfSubscribers, numberOfVideos
             )
-            VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                channelName = VALUES(channelName),
-                dayCollected = VALUES(dayCollected),
-                numberOfSubscribers = VALUES(numberOfSubscribers),
-                numberOfVideos = VALUES(numberOfVideos)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(channelId) DO UPDATE SET
+                channelName = excluded.channelName,
+                dayCollected = excluded.dayCollected,
+                numberOfSubscribers = excluded.numberOfSubscribers,
+                numberOfVideos = excluded.numberOfVideos
         """, (
             channel_data['channelId'],
             channel_data['channelName'],
-            channel_data['dayCollected'],
+            channel_collected_date,  # Use the converted date
             channel_data['numberOfSubscribers'],
             channel_data['numberOfVideos']
         ))
@@ -202,13 +207,13 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
                 videoId, channelId, videoTitle, videoAudio, videoTranscript,
                 viewCount, likeCount, commentCount, publishedAt, collectedDate
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                videoTitle = VALUES(videoTitle),
-                viewCount = VALUES(viewCount),
-                likeCount = VALUES(likeCount),
-                commentCount = VALUES(commentCount),
-                collectedDate = VALUES(collectedDate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(videoId) DO UPDATE SET
+                videoTitle = excluded.videoTitle,
+                viewCount = excluded.viewCount,
+                likeCount = excluded.likeCount,
+                commentCount = excluded.commentCount,
+                collectedDate = excluded.collectedDate
         """, (
             video_data['videoId'],
             video_data['channelId'],
@@ -219,21 +224,22 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
             video_data['likeCount'],
             video_data['commentCount'],
             video_data['publishedAt'],
-            video_data['collectedDate']
+            video_collected_date  # Use the converted date
         ))
 
         # Insert Comments and Replies
         for comment in comments:
+            comment_collected_date = comment['collectedDate'].isoformat()
             cursor.execute("""
                 INSERT INTO Comments (
                     commentId, videoId, parentCommentId, userId, 
                     userName, content, likeCount, publishedAt, collectedDate
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    content = VALUES(content),
-                    likeCount = VALUES(likeCount),
-                    collectedDate = VALUES(collectedDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(commentId) DO UPDATE SET
+                    content = excluded.content,
+                    likeCount = excluded.likeCount,
+                    collectedDate = excluded.collectedDate
             """, (
                 comment['commentId'],
                 comment['videoId'],
@@ -243,7 +249,7 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
                 comment['content'],
                 comment['likeCount'],
                 comment['publishedAt'],
-                comment['collectedDate']
+                comment_collected_date  # Use the converted date
             ))
 
         conn.commit()
@@ -256,7 +262,7 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
 def video_exists_in_database(cursor, video_id):
     """Check if a video exists in the database"""
     try:
-        cursor.execute("SELECT COUNT(*) FROM Videos WHERE videoId = %s", (video_id,))
+        cursor.execute("SELECT COUNT(*) FROM Videos WHERE videoId = ?", (video_id,))
         count = cursor.fetchone()[0]
         return count > 0
     except Exception as e:
@@ -264,7 +270,7 @@ def video_exists_in_database(cursor, video_id):
         return False
 
 def main():
-    conn = mysql.connector.connect(**DB_CONFIG)
+    conn = sqlite3.connect(DB_CONFIG)
     cursor = conn.cursor()
     
     try:
