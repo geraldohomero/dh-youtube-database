@@ -253,6 +253,16 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
         conn.rollback()
         return False
 
+def video_exists_in_database(cursor, video_id):
+    """Check if a video exists in the database"""
+    try:
+        cursor.execute("SELECT COUNT(*) FROM Videos WHERE videoId = %s", (video_id,))
+        count = cursor.fetchone()[0]
+        return count > 0
+    except Exception as e:
+        print(f"Error checking video existence: {str(e)}")
+        return False
+
 def main():
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
@@ -268,6 +278,10 @@ def main():
             for video_id in video_ids:
                 video_data = get_video_details(video_id, channel_id)
                 if not video_data:
+                    continue
+                
+                if video_exists_in_database(cursor, video_data['videoId']):
+                    print(f"Video {video_data['videoId']} already exists in the database. Skipping...")
                     continue
                 
                 comments = get_video_comments(video_id)
