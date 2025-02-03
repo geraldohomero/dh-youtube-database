@@ -1,46 +1,73 @@
 import sqlite3
 from googleapiclient.discovery import build
-from datetime import datetime
+from datetime import datetime, date
 import time
-from sqlite3 import Date, register_adapter
+from sqlite3 import register_adapter
+import logging
+from dataclasses import dataclass
+from typing import Optional
+from config import get_api_key, CHANNEL_IDS, DB_CONFIG
 
-# Configuration
-API_KEY = "x"
-CHANNEL_IDS = ["x"]
+# Initialize YouTube API using the rotated API key
+youtube = build('youtube', 'v3', developerKey=get_api_key())
 
-# Database configuration
-DB_CONFIG = "./db/YouTubeStats.sqlite3"
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
-# Initialize YouTube API
-youtube = build('youtube', 'v3', developerKey=API_KEY)
+def adapt_date(d: date) -> str:
+    """Adapter function to store Python date as ISO string in SQLite."""
+    return d.isoformat()
 
-def adapt_date(date):
-    return date.isoformat()
+register_adapter(date, adapt_date)
 
-register_adapter(datetime.date, adapt_date)
+@dataclass
+class ChannelDetails:
+    channel_id: str
+    channel_name: str
+    subscriber_count: int
 
-def get_channel_details(channel_id):
-    """Fetch channel details"""
+def get_channel_details(channel_id: str) -> Optional[ChannelDetails]:
+    """
+    Fetch channel details from YouTube API by channel ID.
+    
+    Returns ChannelDetails or None if not found or on error.
+    """
     try:
         request = youtube.channels().list(
             part="snippet,statistics",
             id=channel_id
         )
         response = request.execute()
-        
-        if response['items']:
-            channel = response['items'][0]
-            return {
-                'channelId': channel_id,
-                'channelName': channel['snippet']['title'],
-                'numberOfSubscribers': int(channel['statistics']['subscriberCount']),
-                'numberOfVideos': int(channel['statistics']['videoCount']),
-                'dayCollected': datetime.now().date()
-            }
-        return None
+        items = response.get('items', [])
+        if items:
+            channel = items[0]
+            return ChannelDetails(
+                channel_id=channel_id,
+                channel_name=channel['snippet']['title'],
+                subscriber_count=int(channel['statistics']['subscriberCount'])
+            )
+        else:
+            logging.warning("No channel found with id: %s", channel_id)
     except Exception as e:
-        print(f"Error fetching channel details: {str(e)}")
-        return None
+        logging.error("Error fetching channel details for id %s: %s", channel_id, e)
+    return None
+
+def insert_channel_details(channel: ChannelDetails) -> None:
+    """
+    Insert channel details into the SQLite database.
+    Uses a context manager for safe connection closing.
+    """
+    try:
+        with sqlite3.connect(DB_CONFIG) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO channels (channel_id, channel_name, subscriber_count) VALUES (?, ?, ?)",
+                (channel.channel_id, channel.channel_name, channel.subscriber_count)
+            )
+            conn.commit()
+            logging.info("Inserted channel details for %s", channel.channel_id)
+    except sqlite3.Error as e:
+        logging.error("Database error: %s", e)
 
 def get_video_details(video_id, channel_id):
     """Get detailed video information"""
@@ -275,12 +302,22 @@ def main():
     
     try:
         for channel_id in CHANNEL_IDS:
-            channel_data = get_channel_details(channel_id)
-            if not channel_data:
+            details = get_channel_details(channel_id)
+            if not details:
                 print(f"Skipping channel {channel_id}")
                 continue
-            
+
             video_ids = get_channel_videos(channel_id)
+            
+            # Build a dictionary from ChannelDetails with extra required fields.
+            channel_data = {
+                'channelId': details.channel_id,
+                'channelName': details.channel_name,
+                'dayCollected': datetime.now().date(),  # current collected date
+                'numberOfSubscribers': details.subscriber_count,
+                'numberOfVideos': len(video_ids)
+            }
+
             for video_id in video_ids:
                 video_data = get_video_details(video_id, channel_id)
                 if not video_data:
