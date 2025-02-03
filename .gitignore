@@ -27,7 +27,5 @@ data/processed/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
-# Any other files or directories you want to ignore
-
-# Ignore all database files
+apikey_index.txt
 
