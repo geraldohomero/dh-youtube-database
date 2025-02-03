@@ -28,4 +28,4 @@ YOUTUBE_DATA_V3 = <API_KEY>
 ```
 ## ER Diagrama
 
-![image](https://github.com/user-attachments/assets/0f9b9e7a-a732-41de-9b52-29d5612150f4)
+![image](https://github.com/user-attachments/assets/2782032e-77c8-46ce-b773-5adf7658d31f)
