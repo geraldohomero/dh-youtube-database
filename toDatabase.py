@@ -202,33 +202,34 @@ def get_channel_videos(channel_id):
         return []
 
 def save_to_database(conn, cursor, channel_data, video_data, comments):
-    """Save all collected data to database"""
+    """Save video and comment data to database (leaving Channels table unchanged)"""
     try:
-        # Convert dates to ISO format strings before saving
-        channel_collected_date = channel_data['dayCollected'].isoformat()
-        video_collected_date = video_data['collectedDate'].isoformat()
         
-        # Save channel data
-        cursor.execute("""
-            INSERT INTO Channels (
-                channelId, channelName, dayCollected, 
-                numberOfSubscribers, numberOfVideos
-            )
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(channelId) DO UPDATE SET
-                channelName = excluded.channelName,
-                dayCollected = excluded.dayCollected,
-                numberOfSubscribers = excluded.numberOfSubscribers,
-                numberOfVideos = excluded.numberOfVideos
-        """, (
-            channel_data['channelId'],
-            channel_data['channelName'],
-            channel_collected_date,  # Use the converted date
-            channel_data['numberOfSubscribers'],
-            channel_data['numberOfVideos']
-        ))
+        # Convert dates to ISO format strings before saving
+        video_collected_date = video_data['collectedDate'].isoformat()
+        # channel_collected_date = channel_data['dayCollected'].isoformat()
 
-        # Insert/Update Video
+        # # Save channel data
+        # cursor.execute("""
+        #     INSERT INTO Channels (
+        #         channelId, channelName, dayCollected, 
+        #         numberOfSubscribers, numberOfVideos
+        #     )
+        #     VALUES (?, ?, ?, ?, ?)
+        #     ON CONFLICT(channelId) DO UPDATE SET
+        #         channelName = excluded.channelName,
+        #         dayCollected = excluded.dayCollected,
+        #         numberOfSubscribers = excluded.numberOfSubscribers,
+        #         numberOfVideos = excluded.numberOfVideos
+        # """, (
+        #     channel_data['channelId'],
+        #     channel_data['channelName'],
+        #     channel_collected_date,  # Use the converted date
+        #     channel_data['numberOfSubscribers'],
+        #     channel_data['numberOfVideos']
+        # ))
+
+        # Only update the Videos table (no change to Channels table)
         cursor.execute("""
             INSERT INTO Videos (
                 videoId, channelId, videoTitle, videoAudio, videoTranscript,
@@ -251,7 +252,7 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
             video_data['likeCount'],
             video_data['commentCount'],
             video_data['publishedAt'],
-            video_collected_date  # Use the converted date
+            video_collected_date
         ))
 
         # Insert Comments and Replies
@@ -276,7 +277,7 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
                 comment['content'],
                 comment['likeCount'],
                 comment['publishedAt'],
-                comment_collected_date  # Use the converted date
+                comment_collected_date
             ))
 
         conn.commit()

@@ -2,8 +2,8 @@ import os
 
 # Multiple API keys separated by commas in the environment variable YOUTUBE_API_KEYS.
 # For example: "key1,key2,key3"
-API_KEYS = os.environ.get("YOUTUBE_API_KEYS", "z,x").split(",")
-CHANNEL_IDS = os.environ.get("CHANNEL_IDS", "y").split(",")
+API_KEYS = os.environ.get("YOUTUBE_API_KEYS", "x,y").split(",")
+CHANNEL_IDS = os.environ.get("CHANNEL_IDS", "z").split(",")
 DB_CONFIG = os.environ.get("DB_CONFIG", "./db/YouTubeStats.sqlite3")
 
 # File to track the current API key index
