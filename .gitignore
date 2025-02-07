@@ -1,0 +1,32 @@
+# Environment variables
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+env/
+
+# IDE specific files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Data files (if you don't want to track them)
+data/raw/
+data/processed/
+
+# Logs
+*.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+apikey_index.txt
+/db/YouTubeStats.sqlite3
+

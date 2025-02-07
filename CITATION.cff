@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+title: Digital Humanities YouTube Database
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - given-names: Geraldo Homero
+    family-names: Couto Neto
+    orcid: 'https://orcid.org/0000-0001-6686-7182'
+repository-code: 'https://github.com/geraldohomero/dh-youtube-research'
+keywords:
+  - youtube
+  - database
+  - digital humanities
+  - digital history
+  - data analysis
+version: alpha
+date-released: '2024-06-19'
