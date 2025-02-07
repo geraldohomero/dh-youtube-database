@@ -7,6 +7,8 @@ import requests
 from dotenv import load_dotenv
 import logging
 
+## Get list of channels from CSV file
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

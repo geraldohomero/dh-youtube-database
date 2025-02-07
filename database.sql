@@ -39,4 +39,5 @@ CREATE TABLE Comments (
     FOREIGN KEY (parentCommentId) REFERENCES Comments(commentId) ON DELETE CASCADE
 );
 
+-- Update Channels Table
 ALTER TABLE Channels ADD COLUMN numberOfVideos INT;

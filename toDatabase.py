@@ -1,12 +1,13 @@
 import sqlite3
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from datetime import datetime, date
 import time
 from sqlite3 import register_adapter
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from config import get_api_key, CHANNEL_IDS, DB_CONFIG
+from config import get_api_key, CHANNEL_IDS, DB_CONFIG, rotate_api_key
 
 # Initialize YouTube API using the rotated API key
 youtube = build('youtube', 'v3', developerKey=get_api_key())
@@ -26,6 +27,27 @@ class ChannelDetails:
     channel_name: str
     subscriber_count: int
 
+def safe_execute(request):
+    """
+    Executes a YouTube API request.
+    If a quotaExceeded error is encountered, rotates the API key,
+    rebuilds the YouTube client, and reattempts the request.
+    """
+    global youtube
+    try:
+        return request.execute()
+    except HttpError as e:
+        error_content = e.content.decode('utf-8')
+        if e.resp.status == 403 and "quotaExceeded" in error_content:
+            logging.info("[INFO] Quota exceeded. Rotating API key...")
+            new_api_key = rotate_api_key()
+            # Rebuild the YouTube client with the new key
+            youtube = build('youtube', 'v3', developerKey=new_api_key)
+            # Reattempt the request
+            return request.execute()
+        else:
+            raise e
+
 def get_channel_details(channel_id: str) -> Optional[ChannelDetails]:
     """
     Fetch channel details from YouTube API by channel ID.
@@ -37,7 +59,7 @@ def get_channel_details(channel_id: str) -> Optional[ChannelDetails]:
             part="snippet,statistics",
             id=channel_id
         )
-        response = request.execute()
+        response = safe_execute(request)
         items = response.get('items', [])
         if items:
             channel = items[0]
@@ -76,7 +98,7 @@ def get_video_details(video_id, channel_id):
             part="snippet,statistics",
             id=video_id
         )
-        response = request.execute()
+        response = safe_execute(request)
         
         if response['items']:
             video = response['items'][0]
@@ -114,7 +136,7 @@ def get_video_comments(video_id):
                 maxResults=100,
                 pageToken=next_page_token
             )
-            response = request.execute()
+            response = safe_execute(request)
             
             for item in response['items']:
                 # Process top-level comment
@@ -183,7 +205,7 @@ def get_channel_videos(channel_id):
                 pageToken=next_page_token,
                 type="video"
             )
-            response = request.execute()
+            response = safe_execute(request)
             
             video_ids.extend([
                 item['id']['videoId'] 
@@ -195,7 +217,18 @@ def get_channel_videos(channel_id):
             if not next_page_token:
                 break
         
-        print(f"Found {len(video_ids)} videos for channel {channel_id}")
+        # Retrieve channel name from the YouTube API before printing video count
+        channel_response = youtube.channels().list(
+            part="snippet",
+            id=channel_id
+        ).execute()
+
+        if channel_response.get("items"):
+            channel_name = channel_response["items"][0]["snippet"]["title"]
+            print(f"Found {len(video_ids)} videos for channel '{channel_name}' (ID: {channel_id})")
+        else:
+            print(f"Found {len(video_ids)} videos for channel (ID: {channel_id})")
+
         return video_ids
     except Exception as e:
         print(f"Error fetching channel videos: {str(e)}")
@@ -319,7 +352,8 @@ def main():
                 'numberOfVideos': len(video_ids)
             }
 
-            for video_id in video_ids:
+            total_videos = len(video_ids)
+            for i, video_id in enumerate(video_ids, start=1):
                 video_data = get_video_details(video_id, channel_id)
                 if not video_data:
                     continue
@@ -330,11 +364,15 @@ def main():
                 
                 comments = get_video_comments(video_id)
                 if save_to_database(conn, cursor, channel_data, video_data, comments):
-                    print(f"Saved data for video {video_id} ({len(comments)} comments/replies)")
+                    comment_count = len(comments)
+                    print(f"({i}/{total_videos}) Saved data for video {video_id} ({comment_count} comments/replies)")
                 else:
                     print(f"Failed to save data for video {video_id}")
                 
                 time.sleep(1)  # Respect API quota
+
+            remaining_videos = total_videos - i  # after loop, 'i' is the last processed index
+            print(f"[INFO] Process complete. {remaining_videos} videos remaining (if any further processing is needed).")
     finally:
         cursor.close()
         conn.close()
