@@ -28,5 +28,5 @@ data/processed/
 .ipynb_checkpoints/
 
 apikey_index.txt
-/db/YouTubeStats.sqlite3
+db/YouTubeStats.sqlite3
 
