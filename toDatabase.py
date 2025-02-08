@@ -132,6 +132,7 @@ def get_video_comments(video_id: str) -> List[Dict[str, Any]]:
     """
     Fetch video comments (and their replies) from YouTube API.
     Returns a list of comment dictionaries.
+    If comments are disabled, logs a concise message and returns an empty list.
     """
     comments = []
     next_page_token = None
@@ -139,54 +140,64 @@ def get_video_comments(video_id: str) -> List[Dict[str, Any]]:
 
     try:
         while True:
-            request = youtube.commentThreads().list(
-                part="snippet,replies",
-                videoId=video_id,
-                maxResults=100,
-                pageToken=next_page_token
-            )
-            response = safe_execute(request)
-            
-            for item in response.get('items', []):
-                top_comment = item['snippet']['topLevelComment']
-                comment_id = top_comment['id']
-                comment_snippet = top_comment['snippet']
-                
+            try:
+                request = youtube.commentThreads().list(
+                    part="snippet,replies",
+                    videoId=video_id,
+                    maxResults=100,
+                    pageToken=next_page_token
+                )
+                response = safe_execute(request)
+            except HttpError as e:
+                # Decode error content once rather than logging the full response.
+                error_message = e.content.decode("utf-8") if e.content else ""
+                if e.resp.status == 403 and "commentsDisabled" in error_message:
+                    logging.info("Comments are disabled for video %s. Skipping.", video_id)
+                    return []
+                else:
+                    logging.error("Error fetching comments for video %s. Skipping.", video_id)
+                    return []
+
+            for item in response.get("items", []):
+                top_comment = item["snippet"]["topLevelComment"]
+                comment_id = top_comment["id"]
+                comment_snippet = top_comment["snippet"]
                 comment_data = {
-                    'commentId': comment_id,
-                    'videoId': video_id,
-                    'parentCommentId': None,
-                    'userId': comment_snippet['authorChannelId']['value'],
-                    'userName': comment_snippet['authorDisplayName'],
-                    'content': comment_snippet['textDisplay'],
-                    'likeCount': comment_snippet['likeCount'],
-                    'publishedAt': datetime.strptime(comment_snippet['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
-                    'collectedDate': current_date
+                    "commentId": comment_id,
+                    "videoId": video_id,
+                    "parentCommentId": None,
+                    "userId": comment_snippet["authorChannelId"]["value"],
+                    "userName": comment_snippet["authorDisplayName"],
+                    "content": comment_snippet["textDisplay"],
+                    "likeCount": comment_snippet["likeCount"],
+                    "publishedAt": datetime.strptime(comment_snippet["publishedAt"], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
+                    "collectedDate": current_date
                 }
                 comments.append(comment_data)
                 
-                # Process replies, if any
-                for reply in item.get('replies', {}).get('comments', []):
-                    reply_snippet = reply['snippet']
+                # Process replies if any
+                for reply in item.get("replies", {}).get("comments", []):
+                    reply_snippet = reply["snippet"]
                     comments.append({
-                        'commentId': reply['id'],
-                        'videoId': video_id,
-                        'parentCommentId': comment_id,
-                        'userId': reply_snippet['authorChannelId']['value'],
-                        'userName': reply_snippet['authorDisplayName'],
-                        'content': reply_snippet['textDisplay'],
-                        'likeCount': reply_snippet['likeCount'],
-                        'publishedAt': datetime.strptime(reply_snippet['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
-                        'collectedDate': current_date
+                        "commentId": reply["id"],
+                        "videoId": video_id,
+                        "parentCommentId": comment_id,
+                        "userId": reply_snippet["authorChannelId"]["value"],
+                        "userName": reply_snippet["authorDisplayName"],
+                        "content": reply_snippet["textDisplay"],
+                        "likeCount": reply_snippet["likeCount"],
+                        "publishedAt": datetime.strptime(reply_snippet["publishedAt"], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
+                        "collectedDate": current_date
                     })
-            
-            next_page_token = response.get('nextPageToken')
+
+            next_page_token = response.get("nextPageToken")
             if not next_page_token:
                 break
 
-    except Exception as e:
-        logging.error("Error fetching comments for video %s: %s", video_id, e)
-    
+    except Exception:
+        logging.error("Unexpected error fetching comments for video %s. Skipping.", video_id)
+        return []
+
     return comments
 
 def get_channel_videos(channel_id: str) -> List[str]:
