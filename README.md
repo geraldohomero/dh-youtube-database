@@ -30,4 +30,5 @@ DB_CONFIG=./db/YouTubeStats.sqlite3
 ```
 ## ER Diagrama
 
-![image](https://github.com/user-attachments/assets/2782032e-77c8-46ce-b773-5adf7658d31f)
+![image](https://github.com/user-attachments/assets/ba7f69a9-1ee5-4d73-869b-984c032c4f5e)
+
