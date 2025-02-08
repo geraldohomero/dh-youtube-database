@@ -30,3 +30,4 @@ data/processed/
 apikey_index.txt
 db/YouTubeStats.sqlite3
 
+*.mp3

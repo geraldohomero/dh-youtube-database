@@ -6,14 +6,18 @@ import time
 from sqlite3 import register_adapter
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from config import get_api_key, CHANNEL_IDS, DB_CONFIG, rotate_api_key
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # Initialize YouTube API using the rotated API key
 youtube = build('youtube', 'v3', developerKey=get_api_key())
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
 
 def adapt_date(d: date) -> str:
     """Adapter function to store Python date as ISO string in SQLite."""
@@ -27,11 +31,10 @@ class ChannelDetails:
     channel_name: str
     subscriber_count: int
 
-def safe_execute(request):
+def safe_execute(request) -> Dict[str, Any]:
     """
     Executes a YouTube API request.
-    If a quotaExceeded error is encountered, rotates the API key,
-    rebuilds the YouTube client, and reattempts the request.
+    Rotates API key and reattempts the request if quota is exceeded.
     """
     global youtube
     try:
@@ -39,20 +42,18 @@ def safe_execute(request):
     except HttpError as e:
         error_content = e.content.decode('utf-8')
         if e.resp.status == 403 and "quotaExceeded" in error_content:
-            logging.info("[INFO] Quota exceeded. Rotating API key...")
+            logging.info("Quota exceeded. Rotating API key...")
             new_api_key = rotate_api_key()
-            # Rebuild the YouTube client with the new key
             youtube = build('youtube', 'v3', developerKey=new_api_key)
-            # Reattempt the request
             return request.execute()
         else:
-            raise e
+            logging.error("YouTube API error: %s", e)
+            raise
 
 def get_channel_details(channel_id: str) -> Optional[ChannelDetails]:
     """
     Fetch channel details from YouTube API by channel ID.
-    
-    Returns ChannelDetails or None if not found or on error.
+    Returns ChannelDetails or None on error.
     """
     try:
         request = youtube.channels().list(
@@ -77,7 +78,6 @@ def get_channel_details(channel_id: str) -> Optional[ChannelDetails]:
 def insert_channel_details(channel: ChannelDetails) -> None:
     """
     Insert channel details into the SQLite database.
-    Uses a context manager for safe connection closing.
     """
     try:
         with sqlite3.connect(DB_CONFIG) as conn:
@@ -89,19 +89,25 @@ def insert_channel_details(channel: ChannelDetails) -> None:
             conn.commit()
             logging.info("Inserted channel details for %s", channel.channel_id)
     except sqlite3.Error as e:
-        logging.error("Database error: %s", e)
+        logging.error("Database error inserting channel details: %s", e)
 
-def get_video_details(video_id, channel_id):
-    """Get detailed video information"""
+def get_video_details(video_id: str, channel_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get detailed video information from YouTube API.
+    Returns a dictionary with video details or None on error.
+    Adds a 'commentsEnabled' flag to indicate if comments are available.
+    """
     try:
         request = youtube.videos().list(
             part="snippet,statistics",
             id=video_id
         )
         response = safe_execute(request)
-        
-        if response['items']:
+        if response.get('items'):
             video = response['items'][0]
+            published_at = datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
+            # Determine if comments are enabled (the API returns 'commentCount' only if enabled)
+            comments_enabled = 'commentCount' in video['statistics']
             return {
                 'videoId': video_id,
                 'channelId': channel_id,
@@ -110,25 +116,28 @@ def get_video_details(video_id, channel_id):
                 'videoTranscript': None,
                 'viewCount': int(video['statistics'].get('viewCount', 0)),
                 'likeCount': int(video['statistics'].get('likeCount', 0)),
-                'commentCount': int(video['statistics'].get('commentCount', 0)),
-                'publishedAt': datetime.strptime(
-                    video['snippet']['publishedAt'], 
-                    '%Y-%m-%dT%H:%M:%SZ'
-                ).strftime('%Y-%m-%d %H:%M:%S'),
-                'collectedDate': datetime.now().date()
+                'commentCount': int(video['statistics']['commentCount']) if comments_enabled else 0,
+                'publishedAt': published_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'collectedDate': datetime.now().date(),
+                'commentsEnabled': comments_enabled
             }
+        else:
+            logging.warning("No video details found for video id: %s", video_id)
         return None
     except Exception as e:
-        print(f"Error fetching video details: {str(e)}")
+        logging.error("Error fetching video details for video id %s: %s", video_id, e)
         return None
 
-def get_video_comments(video_id):
-    """Fetch video comments and replies with proper IDs"""
+def get_video_comments(video_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch video comments (and their replies) from YouTube API.
+    Returns a list of comment dictionaries.
+    """
+    comments = []
+    next_page_token = None
+    current_date = datetime.now().date()
+
     try:
-        comments = []
-        next_page_token = None
-        current_date = datetime.now().date()
-        
         while True:
             request = youtube.commentThreads().list(
                 part="snippet,replies",
@@ -138,8 +147,7 @@ def get_video_comments(video_id):
             )
             response = safe_execute(request)
             
-            for item in response['items']:
-                # Process top-level comment
+            for item in response.get('items', []):
                 top_comment = item['snippet']['topLevelComment']
                 comment_id = top_comment['id']
                 comment_snippet = top_comment['snippet']
@@ -152,51 +160,43 @@ def get_video_comments(video_id):
                     'userName': comment_snippet['authorDisplayName'],
                     'content': comment_snippet['textDisplay'],
                     'likeCount': comment_snippet['likeCount'],
-                    'publishedAt': datetime.strptime(
-                        comment_snippet['publishedAt'], 
-                        '%Y-%m-%dT%H:%M:%SZ'
-                    ).strftime('%Y-%m-%d %H:%M:%S'),
+                    'publishedAt': datetime.strptime(comment_snippet['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
                     'collectedDate': current_date
                 }
-                
-                # Process replies
-                replies = []
-                if 'replies' in item:
-                    for reply in item['replies']['comments']:
-                        reply_snippet = reply['snippet']
-                        replies.append({
-                            'commentId': reply['id'],
-                            'videoId': video_id,
-                            'parentCommentId': comment_id,
-                            'userId': reply_snippet['authorChannelId']['value'],
-                            'userName': reply_snippet['authorDisplayName'],
-                            'content': reply_snippet['textDisplay'],
-                            'likeCount': reply_snippet['likeCount'],
-                            'publishedAt': datetime.strptime(
-                                reply_snippet['publishedAt'], 
-                                '%Y-%m-%dT%H:%M:%SZ'
-                            ).strftime('%Y-%m-%d %H:%M:%S'),
-                            'collectedDate': current_date
-                        })
-                
                 comments.append(comment_data)
-                comments.extend(replies)  # Add replies directly to comments list
+                
+                # Process replies, if any
+                for reply in item.get('replies', {}).get('comments', []):
+                    reply_snippet = reply['snippet']
+                    comments.append({
+                        'commentId': reply['id'],
+                        'videoId': video_id,
+                        'parentCommentId': comment_id,
+                        'userId': reply_snippet['authorChannelId']['value'],
+                        'userName': reply_snippet['authorDisplayName'],
+                        'content': reply_snippet['textDisplay'],
+                        'likeCount': reply_snippet['likeCount'],
+                        'publishedAt': datetime.strptime(reply_snippet['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M:%S'),
+                        'collectedDate': current_date
+                    })
             
             next_page_token = response.get('nextPageToken')
             if not next_page_token:
                 break
-        
-        return comments
-    except Exception as e:
-        print(f"Error fetching comments for video {video_id}: {str(e)}")
-        return []
 
-def get_channel_videos(channel_id):
-    """Get list of all video IDs for a channel"""
+    except Exception as e:
+        logging.error("Error fetching comments for video %s: %s", video_id, e)
+    
+    return comments
+
+def get_channel_videos(channel_id: str) -> List[str]:
+    """
+    Get list of all video IDs for a given channel.
+    """
+    video_ids = []
+    next_page_token = None
+    
     try:
-        video_ids = []
-        next_page_token = None
-        
         while True:
             request = youtube.search().list(
                 part="snippet",
@@ -208,61 +208,40 @@ def get_channel_videos(channel_id):
             response = safe_execute(request)
             
             video_ids.extend([
-                item['id']['videoId'] 
-                for item in response['items'] 
-                if item['id']['kind'] == "youtube#video"
+                item['id']['videoId']
+                for item in response.get('items', [])
+                if item['id'].get('kind') == "youtube#video"
             ])
             
             next_page_token = response.get('nextPageToken')
             if not next_page_token:
                 break
-        
-        # Retrieve channel name from the YouTube API before printing video count
+
+        # Retrieve and log channel name along with video count
         channel_response = youtube.channels().list(
             part="snippet",
             id=channel_id
         ).execute()
-
         if channel_response.get("items"):
             channel_name = channel_response["items"][0]["snippet"]["title"]
-            print(f"Found {len(video_ids)} videos for channel '{channel_name}' (ID: {channel_id})")
+            logging.info("Found %d videos for channel '%s' (ID: %s)", len(video_ids), channel_name, channel_id)
         else:
-            print(f"Found {len(video_ids)} videos for channel (ID: {channel_id})")
-
-        return video_ids
+            logging.info("Found %d videos for channel (ID: %s)", len(video_ids), channel_id)
     except Exception as e:
-        print(f"Error fetching channel videos: {str(e)}")
-        return []
+        logging.error("Error fetching channel videos for channel %s: %s", channel_id, e)
+    
+    return video_ids
 
-def save_to_database(conn, cursor, channel_data, video_data, comments):
-    """Save video and comment data to database (leaving Channels table unchanged)"""
+def save_to_database(conn: sqlite3.Connection, cursor: sqlite3.Cursor,
+                     channel_data: Dict[str, Any], video_data: Dict[str, Any],
+                     comments: List[Dict[str, Any]]) -> bool:
+    """
+    Save video and comment data to the SQLite database.
+    """
     try:
-        
-        # Convert dates to ISO format strings before saving
         video_collected_date = video_data['collectedDate'].isoformat()
-        # channel_collected_date = channel_data['dayCollected'].isoformat()
 
-        # # Save channel data
-        # cursor.execute("""
-        #     INSERT INTO Channels (
-        #         channelId, channelName, dayCollected, 
-        #         numberOfSubscribers, numberOfVideos
-        #     )
-        #     VALUES (?, ?, ?, ?, ?)
-        #     ON CONFLICT(channelId) DO UPDATE SET
-        #         channelName = excluded.channelName,
-        #         dayCollected = excluded.dayCollected,
-        #         numberOfSubscribers = excluded.numberOfSubscribers,
-        #         numberOfVideos = excluded.numberOfVideos
-        # """, (
-        #     channel_data['channelId'],
-        #     channel_data['channelName'],
-        #     channel_collected_date,  # Use the converted date
-        #     channel_data['numberOfSubscribers'],
-        #     channel_data['numberOfVideos']
-        # ))
-
-        # Only update the Videos table (no change to Channels table)
+        # Update Videos table
         cursor.execute("""
             INSERT INTO Videos (
                 videoId, channelId, videoTitle, videoAudio, videoTranscript,
@@ -312,70 +291,75 @@ def save_to_database(conn, cursor, channel_data, video_data, comments):
                 comment['publishedAt'],
                 comment_collected_date
             ))
-
+        
         conn.commit()
         return True
     except Exception as e:
-        print(f"Database error: {str(e)}")
+        logging.error("Database error while saving video %s: %s", video_data.get('videoId'), e)
         conn.rollback()
         return False
 
-def video_exists_in_database(cursor, video_id):
-    """Check if a video exists in the database"""
+def video_exists_in_database(cursor: sqlite3.Cursor, video_id: str) -> bool:
+    """
+    Check if a video exists in the database.
+    """
     try:
         cursor.execute("SELECT COUNT(*) FROM Videos WHERE videoId = ?", (video_id,))
         count = cursor.fetchone()[0]
         return count > 0
     except Exception as e:
-        print(f"Error checking video existence: {str(e)}")
+        logging.error("Error checking existence of video %s: %s", video_id, e)
         return False
 
 def main():
-    conn = sqlite3.connect(DB_CONFIG)
-    cursor = conn.cursor()
-    
-    try:
-        for channel_id in CHANNEL_IDS:
-            details = get_channel_details(channel_id)
-            if not details:
-                print(f"Skipping channel {channel_id}")
-                continue
-
-            video_ids = get_channel_videos(channel_id)
-            
-            # Build a dictionary from ChannelDetails with extra required fields.
-            channel_data = {
-                'channelId': details.channel_id,
-                'channelName': details.channel_name,
-                'dayCollected': datetime.now().date(),  # current collected date
-                'numberOfSubscribers': details.subscriber_count,
-                'numberOfVideos': len(video_ids)
-            }
-
-            total_videos = len(video_ids)
-            for i, video_id in enumerate(video_ids, start=1):
-                video_data = get_video_details(video_id, channel_id)
-                if not video_data:
+    with sqlite3.connect(DB_CONFIG) as conn:
+        cursor = conn.cursor()
+        try:
+            for channel_id in CHANNEL_IDS:
+                details = get_channel_details(channel_id)
+                if not details:
+                    logging.warning("Skipping channel %s due to missing details.", channel_id)
                     continue
-                
-                if video_exists_in_database(cursor, video_data['videoId']):
-                    print(f"Video {video_data['videoId']} already exists in the database. Skipping...")
-                    continue
-                
-                comments = get_video_comments(video_id)
-                if save_to_database(conn, cursor, channel_data, video_data, comments):
-                    comment_count = len(comments)
-                    print(f"({i}/{total_videos}) Saved data for video {video_id} ({comment_count} comments/replies)")
-                else:
-                    print(f"Failed to save data for video {video_id}")
-                
-                time.sleep(1)  # Respect API quota
 
-            remaining_videos = total_videos - i  # after loop, 'i' is the last processed index
-            print(f"[INFO] Process complete. {remaining_videos} videos remaining (if any further processing is needed).")
-    finally:
-        cursor.close()
-        conn.close()
+                video_ids = get_channel_videos(channel_id)
+                channel_data = {
+                    'channelId': details.channel_id,
+                    'channelName': details.channel_name,
+                    'dayCollected': datetime.now().date(),
+                    'numberOfSubscribers': details.subscriber_count,
+                    'numberOfVideos': len(video_ids)
+                }
+
+                total_videos = len(video_ids)
+                for i, video_id in enumerate(video_ids, start=1):
+                    video_data = get_video_details(video_id, channel_id)
+                    if not video_data:
+                        continue
+
+                    if video_exists_in_database(cursor, video_data['videoId']):
+                        logging.info("Video %s already exists in the database. Skipping...", video_data['videoId'])
+                        continue
+
+                    # Check if comments are enabled for the video.
+                    if not video_data.get('commentsEnabled'):
+                        logging.info("Comments are disabled for video %s. Skipping fetching comments.", video_id)
+                        comments = []
+                    else:
+                        comments = get_video_comments(video_id)
+                    
+                    if save_to_database(conn, cursor, channel_data, video_data, comments):
+                        logging.info("(%d/%d) Saved data for video %s (%d comments/replies)",
+                                     i, total_videos, video_id, len(comments))
+                    else:
+                        logging.error("Failed to save data for video %s", video_id)
+                    
+                    time.sleep(1)  # Respect API quota
+
+                remaining_videos = total_videos - i
+                logging.info("Processing complete for channel %s. %d videos remaining (if any further processing is needed).",
+                             channel_id, remaining_videos)
+        finally:
+            cursor.close()
 
 if __name__ == "__main__":
     main()
