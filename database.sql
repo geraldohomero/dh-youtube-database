@@ -6,7 +6,8 @@ CREATE TABLE Channels (
     channelId VARCHAR(255) PRIMARY KEY,
     channelName VARCHAR(255) NOT NULL,
     dayCollected DATE NOT NULL,          -- Date of data collection
-    numberOfSubscribers INT
+    numberOfSubscribers INT,
+    numberOfVideos INT
 );
 
 -- 2. Videos Table
@@ -38,6 +39,3 @@ CREATE TABLE Comments (
     FOREIGN KEY (videoId) REFERENCES Videos(videoId) ON DELETE CASCADE,
     FOREIGN KEY (parentCommentId) REFERENCES Comments(commentId) ON DELETE CASCADE
 );
-
--- Update Channels Table
-ALTER TABLE Channels ADD COLUMN numberOfVideos INT;
