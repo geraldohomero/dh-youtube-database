@@ -1,6 +1,6 @@
 ## Digital Humanities Youtube Research Database (PhD Research Proposal)
 
-[![DOI](https://zenodo.org/badge/776976964.svg)](https://doi.org/10.5281/zenodo.14796866)
+[![DOI](https://zenodo.org/badge/929105417.svg)](https://doi.org/10.5281/zenodo.15258448)
 
 ## Base de dados
 
