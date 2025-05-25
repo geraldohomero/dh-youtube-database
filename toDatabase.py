@@ -202,31 +202,46 @@ def get_video_comments(video_id: str) -> List[Dict[str, Any]]:
 
 def get_channel_videos(channel_id: str) -> List[str]:
     """
-    Get list of all video IDs for a given channel.
+    Get list of all video IDs for a given channel using the uploads playlist.
     """
     video_ids = []
     next_page_token = None
     
     try:
+        # uploads playlist ID for this channel
+        channel_request = youtube.channels().list(
+            part="contentDetails",
+            id=channel_id
+        )
+        channel_response = safe_execute(channel_request)
+        
+        if not channel_response.get('items'):
+            logging.error("Could not find channel with ID: %s", channel_id)
+            return []
+        
+        # Extract the uploads playlist ID
+        uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+        logging.info("Found uploads playlist ID: %s for channel: %s", uploads_playlist_id, channel_id)
+        
+        # fetch all videos from this playlist
         while True:
-            request = youtube.search().list(
+            playlist_request = youtube.playlistItems().list(
                 part="snippet",
-                channelId=channel_id,
+                playlistId=uploads_playlist_id,
                 maxResults=50,
-                pageToken=next_page_token,
-                type="video"
+                pageToken=next_page_token
             )
-            response = safe_execute(request)
+            playlist_response = safe_execute(playlist_request)
             
-            video_ids.extend([
-                item['id']['videoId']
-                for item in response.get('items', [])
-                if item['id'].get('kind') == "youtube#video"
-            ])
+            for item in playlist_response.get('items', []):
+                video_ids.append(item['snippet']['resourceId']['videoId'])
             
-            next_page_token = response.get('nextPageToken')
+            next_page_token = playlist_response.get('nextPageToken')
             if not next_page_token:
                 break
+            
+            # Add a slight delay to respect API quota
+            time.sleep(0.5)
 
         # Retrieve and log channel name along with video count
         channel_response = youtube.channels().list(
