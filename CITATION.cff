@@ -5,8 +5,8 @@ type: software
 authors:
   - given-names: Geraldo Homero
     family-names: Couto Neto
-    orcid: 'https://orcid.org/0000-0001-6686-7182'
-repository-code: 'https://github.com/geraldohomero/dh-youtube-database'
+    orcid: "https://orcid.org/0000-0001-6686-7182"
+repository-code: "https://github.com/geraldohomero/dh-youtube-database"
 keywords:
   - youtube
   - database
@@ -14,4 +14,5 @@ keywords:
   - digital history
   - data analysis
 version: alpha
-date-released: '2024-06-19'
+date-released: "2024-06-19"
+doi: 10.5281/zenodo.15258448

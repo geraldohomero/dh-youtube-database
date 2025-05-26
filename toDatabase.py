@@ -8,6 +8,25 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from config import get_api_key, CHANNEL_IDS, DB_CONFIG, rotate_api_key
+import sys
+from pathlib import Path
+
+# Add the project root to path to enable imports
+project_root = Path(__file__).resolve().parent
+sys.path.append(str(project_root))
+
+# Import transcript functionality
+try:
+    from data.transcriptions.transcript import get_transcript, format_transcript_text
+except ImportError:
+    logging.error("Failed to import transcript module. Transcript functionality will be disabled.")
+    
+    # Create placeholder functions if import fails
+    def get_transcript(video_id):
+        return False, "Transcript functionality not available", None
+    
+    def format_transcript_text(transcript_data):
+        return "Transcript formatting not available"
 
 # Setup logging
 logging.basicConfig(
@@ -108,12 +127,17 @@ def get_video_details(video_id: str, channel_id: str) -> Optional[Dict[str, Any]
             published_at = datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
             # Determine if comments are enabled (the API returns 'commentCount' only if enabled)
             comments_enabled = 'commentCount' in video['statistics']
+            
+            # Try to get the transcript
+            success, transcript_text, transcript_lang = get_transcript(video_id)
+            
             return {
                 'videoId': video_id,
                 'channelId': channel_id,
                 'videoTitle': video['snippet']['title'],
                 'videoAudio': None,
-                'videoTranscript': None,
+                'videoTranscript': transcript_text if success else None,
+                'transcriptLanguage': transcript_lang if success else None,
                 'viewCount': int(video['statistics'].get('viewCount', 0)),
                 'likeCount': int(video['statistics'].get('likeCount', 0)),
                 'commentCount': int(video['statistics']['commentCount']) if comments_enabled else 0,
@@ -267,19 +291,30 @@ def save_to_database(conn: sqlite3.Connection, cursor: sqlite3.Cursor,
     try:
         video_collected_date = video_data['collectedDate'].isoformat()
 
-        # Update Videos table
+        # Check if transcriptLanguage column exists, add it if missing
+        try:
+            cursor.execute("SELECT transcriptLanguage FROM Videos WHERE videoId = ? LIMIT 1", 
+                          (video_data['videoId'],))
+        except sqlite3.OperationalError:
+            logging.info("Adding transcriptLanguage column to Videos table")
+            cursor.execute("ALTER TABLE Videos ADD COLUMN transcriptLanguage TEXT")
+            
+        # Update Videos table with transcript information
         cursor.execute("""
             INSERT INTO Videos (
                 videoId, channelId, videoTitle, videoAudio, videoTranscript,
-                viewCount, likeCount, commentCount, publishedAt, collectedDate
+                viewCount, likeCount, commentCount, publishedAt, collectedDate,
+                transcriptLanguage
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(videoId) DO UPDATE SET
                 videoTitle = excluded.videoTitle,
                 viewCount = excluded.viewCount,
                 likeCount = excluded.likeCount,
                 commentCount = excluded.commentCount,
-                collectedDate = excluded.collectedDate
+                collectedDate = excluded.collectedDate,
+                videoTranscript = COALESCE(excluded.videoTranscript, videoTranscript),
+                transcriptLanguage = COALESCE(excluded.transcriptLanguage, transcriptLanguage)
         """, (
             video_data['videoId'],
             video_data['channelId'],
@@ -290,9 +325,10 @@ def save_to_database(conn: sqlite3.Connection, cursor: sqlite3.Cursor,
             video_data['likeCount'],
             video_data['commentCount'],
             video_data['publishedAt'],
-            video_collected_date
+            video_collected_date,
+            video_data.get('transcriptLanguage')
         ))
-
+        
         # Insert Comments and Replies
         for comment in comments:
             comment_collected_date = comment['collectedDate'].isoformat()
@@ -341,6 +377,14 @@ def main():
     with sqlite3.connect(DB_CONFIG) as conn:
         cursor = conn.cursor()
         try:
+            # Add transcriptLanguage column if it doesn't exist
+            try:
+                cursor.execute("SELECT transcriptLanguage FROM Videos LIMIT 1")
+            except sqlite3.OperationalError:
+                logging.info("Adding transcriptLanguage column to Videos table")
+                cursor.execute("ALTER TABLE Videos ADD COLUMN transcriptLanguage TEXT")
+                conn.commit()
+
             for channel_id in CHANNEL_IDS:
                 details = get_channel_details(channel_id)
                 if not details:
@@ -363,7 +407,22 @@ def main():
                         continue
 
                     if video_exists_in_database(cursor, video_data['videoId']):
-                        logging.info("Video %s already exists in the database. Skipping...", video_data['videoId'])
+                        logging.info("Video %s already exists in the database. Checking for transcript...", video_data['videoId'])
+                        # Check if we need to update the transcript
+                        cursor.execute("SELECT videoTranscript FROM Videos WHERE videoId = ?", (video_data['videoId'],))
+                        result = cursor.fetchone()
+                        if result and result[0] is None:
+                            # Try to get transcript for existing video that's missing transcript
+                            success, transcript_text, transcript_lang = get_transcript(video_id)
+                            if success:
+                                logging.info("Downloaded transcript for existing video %s", video_id)
+                                cursor.execute(
+                                    "UPDATE Videos SET videoTranscript = ?, transcriptLanguage = ? WHERE videoId = ?", 
+                                    (transcript_text, transcript_lang, video_id)
+                                )
+                                conn.commit()
+                            else:
+                                logging.info("Couldn't download transcript for existing video %s: %s", video_id, transcript_text)
                         continue
 
                     # Check if comments are enabled for the video.
@@ -374,8 +433,9 @@ def main():
                         comments = get_video_comments(video_id)
                     
                     if save_to_database(conn, cursor, channel_data, video_data, comments):
-                        logging.info("(%d/%d) Saved data for video %s (%d comments/replies)",
-                                     i, total_videos, video_id, len(comments))
+                        transcript_status = "with transcript" if video_data.get('videoTranscript') else "without transcript"
+                        logging.info("(%d/%d) Saved data for video %s (%d comments/replies, %s)",
+                                     i, total_videos, video_id, len(comments), transcript_status)
                     else:
                         logging.error("Failed to save data for video %s", video_id)
                     

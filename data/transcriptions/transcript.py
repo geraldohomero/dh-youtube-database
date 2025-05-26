@@ -217,7 +217,7 @@ def main():
     processed_count = 0
     
     # Use a thread pool with max 5 workers
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         # Submit all tasks to the executor
         future_to_video = {
             executor.submit(process_video_transcript, video_id): video_id 
