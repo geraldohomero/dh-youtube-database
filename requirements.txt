@@ -1,6 +1,37 @@
-google-api-python-client
-python-dotenv
-filelock
-pandas
-requests
-yt-dlp
+# Google API dependencies
+google-api-core==2.24.2
+google-api-python-client==2.170.0
+google-auth==2.40.2
+google-auth-httplib2==0.2.0
+googleapis-common-protos==1.70.0
+httplib2==0.22.0
+
+# Utility libraries
+python-dotenv==1.1.0
+requests==2.32.3
+pandas==2.2.3
+numpy==2.2.6
+yt-dlp==2025.5.22
+youtube-transcript-api==0.6.1  # Added for transcript functionality
+
+# Supporting libraries
+cachetools==5.5.2
+certifi==2025.4.26
+charset-normalizer==3.4.2
+filelock==3.18.0
+idna==3.10
+proto-plus==1.26.1
+protobuf==6.31.0
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+pyparsing==3.2.3
+python-dateutil==2.9.0.post0
+pytz==2025.2
+rsa==4.9.1
+six==1.17.0
+tzdata==2025.2
+uritemplate==4.1.1
+urllib3==2.4.0
+
+# OAuth libraries for YouTube API
+google-auth-oauthlib==1.1.0

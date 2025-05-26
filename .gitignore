@@ -25,3 +25,5 @@ apikey_index.txt
 .ipynb_checkpoints
 
 *.sqlite3
+
+*.mp3
