@@ -128,8 +128,18 @@ def get_video_details(video_id: str, channel_id: str) -> Optional[Dict[str, Any]
             # Determine if comments are enabled (the API returns 'commentCount' only if enabled)
             comments_enabled = 'commentCount' in video['statistics']
             
-            # Try to get the transcript
-            success, transcript_text, transcript_lang = get_transcript(video_id)
+            # Try to get the transcript with one retry on failure
+            try:
+                success, transcript_text, transcript_lang = get_transcript(video_id)
+            except Exception as e:
+                logging.warning("First transcript attempt failed for video %s: %s. Trying again...", video_id, e)
+                # Wait briefly before retry
+                time.sleep(1)
+                try:
+                    success, transcript_text, transcript_lang = get_transcript(video_id)
+                except Exception as e:
+                    logging.error("Second transcript attempt also failed for video %s: %s", video_id, e)
+                    success, transcript_text, transcript_lang = False, None, None
             
             return {
                 'videoId': video_id,
@@ -422,7 +432,23 @@ def main():
                                 )
                                 conn.commit()
                             else:
-                                logging.info("Couldn't download transcript for existing video %s: %s", video_id, transcript_text)
+                                logging.info("Couldn't download transcript for existing video %s: %s. Retrying once...", video_id, transcript_text)
+                                # Wait briefly before retry
+                                time.sleep(1)
+                                try:
+                                    success, transcript_text, transcript_lang = get_transcript(video_id)
+                                except Exception as e:
+                                    logging.error("Second transcript attempt also failed for existing video %s: %s", video_id, e)
+                                    success = False
+                                if success:
+                                    logging.info("Downloaded transcript for existing video %s on retry", video_id)
+                                    cursor.execute(
+                                        "UPDATE Videos SET videoTranscript = ?, transcriptLanguage = ? WHERE videoId = ?", 
+                                        (transcript_text, transcript_lang, video_id)
+                                    )
+                                    conn.commit()
+                                else:
+                                    logging.info("Couldn't download transcript for existing video %s after retry: %s", video_id, transcript_text)
                         continue
 
                     # Check if comments are enabled for the video.
