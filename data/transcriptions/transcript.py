@@ -83,7 +83,47 @@ def get_transcript(video_id: str) -> tuple:
     except TranscriptsDisabled:
         return False, "Transcripts are disabled for this video", None
     except Exception as e:
-        return False, f"Error retrieving transcript: {str(e)}", None
+        # If an error occurs, try one more time unless it's a known non-retriable error
+        error_msg = str(e).lower()
+        if "video is no longer available" in error_msg or "video unavailable" in error_msg:
+            return False, "Video is no longer available", None
+        if "age-restricted" in error_msg or "age restricted" in error_msg:
+            return False, "Video is age restricted", None
+        try:
+            # Retry once
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            # Repeat the same logic as above for retry
+            manual_transcript = None
+            for transcript in transcript_list:
+                if not transcript.is_generated:
+                    if transcript.language_code == 'pt-BR' or transcript.language_code == 'pt':
+                        transcript_data = transcript.fetch()
+                        return True, format_transcript_text(transcript_data), transcript.language_code
+                    elif transcript.language_code.startswith('en'):
+                        manual_transcript = (transcript.fetch(), transcript.language_code)
+            if manual_transcript:
+                return True, format_transcript_text(manual_transcript[0]), manual_transcript[1]
+            try:
+                transcript = transcript_list.find_transcript(['pt', 'pt-BR'])
+                transcript_data = transcript.fetch()
+                return True, format_transcript_text(transcript_data), transcript.language_code
+            except:
+                try:
+                    transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
+                    transcript_data = transcript.fetch()
+                    return True, format_transcript_text(transcript_data), transcript.language_code
+                except:
+                    transcript = transcript_list.find_transcript(['pt', 'en', 'es'])
+                    transcript_data = transcript.fetch()
+                    return True, format_transcript_text(transcript_data), transcript.language_code
+        except Exception as retry_e:
+            retry_msg = str(retry_e).lower()
+            if "video is unavailable" in retry_msg or "video unavailable" in retry_msg:
+                return False, "Video is no longer available", None
+            if "age-restricted" in retry_msg or "age restricted" in retry_msg:
+                return False, "Video is age restricted", None
+            return False, f"Error retrieving transcript after retry: {str(retry_e)}", None
+        return False, f"Error retrieving transcript for {video_id}: {str(e)}", None
 
 def format_transcript_text(transcript_data: list) -> str:
     """Format transcript data into readable text with timestamps."""
@@ -217,7 +257,7 @@ def main():
     processed_count = 0
     
     # Use a thread pool with max 5 workers
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         # Submit all tasks to the executor
         future_to_video = {
             executor.submit(process_video_transcript, video_id): video_id 
