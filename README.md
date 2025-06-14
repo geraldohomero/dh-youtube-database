@@ -2,6 +2,8 @@
 
 [![DOI](https://zenodo.org/badge/929105417.svg)](https://doi.org/10.5281/zenodo.15258448)
 
+> Projeto de pesquisa financiado pelo [Conselho Nacional de Desenvolvimento Científico e Tecnológico (CNPq)](https://cnpq.br), Brasil
+
 ## Base de dados
 
 Essa base de dados irá contar com as seguintes ferramentas para análise
