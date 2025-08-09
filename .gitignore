@@ -27,3 +27,5 @@ apikey_index.txt
 *.sqlite3
 
 *.mp3
+
+.stfolder
