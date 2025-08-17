@@ -4,18 +4,75 @@ import time
 import logging
 import concurrent.futures
 from pathlib import Path
+from dotenv import load_dotenv
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# ANSI color codes for terminal output
+GREEN = '\033[92m'
+RESET = '\033[0m'
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging with color support
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter to add colors to log messages"""
+    
+    def format(self, record):
+        # Format the message first using the parent formatter
+        message = super().format(record)
+        
+        # Add color for success messages about transcripts
+        if record.levelno == logging.INFO and ("Downloaded and stored" in record.getMessage() or 
+                                              "Transcript already exists" in record.getMessage()):
+            return f"{GREEN}{message}{RESET}"
+        
+        return message
+
+# Configure logging with custom formatter
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Remove any existing handlers
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Create console handler with custom formatter
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+formatter = ColoredFormatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 # Define project paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DB_CONFIG = PROJECT_ROOT / "db" / "YouTubeStats.sqlite3"
+
+def create_youtube_api():
+    """Create YouTubeTranscriptApi instance with proxy configuration."""
+    # Obtendo credenciais do proxy do arquivo .env
+    proxy_username = os.getenv('WEBSHARE_PROXY_USERNAME')
+    proxy_password = os.getenv('WEBSHARE_PROXY_PASSWORD')
+    
+    # Verificando se as credenciais existem
+    if not proxy_username or not proxy_password:
+        logging.warning("Credenciais de proxy não encontradas no arquivo .env")
+        logging.warning("Configure WEBSHARE_PROXY_USERNAME e WEBSHARE_PROXY_PASSWORD no arquivo .env")
+        # Tentando sem proxy como fallback
+        return YouTubeTranscriptApi()
+    else:
+        # Configurando o proxy da Webshare
+        proxy_config = WebshareProxyConfig(
+            proxy_username=proxy_username,
+            proxy_password=proxy_password,
+            # Opcional: você pode filtrar por localização
+            # filter_ip_locations=["br", "us"],
+        )
+        
+        # Instanciando a API com a configuração de proxy
+        logging.info("Usando proxy Webshare para evitar bloqueio de IP")
+        return YouTubeTranscriptApi(proxy_config=proxy_config)
 
 def format_duration(seconds: float) -> str:
     """Format seconds into a string in hh:mm:ss format."""
@@ -27,146 +84,111 @@ def get_videos_needing_transcript() -> list:
     """Retrieve the list of videoIds that need transcription."""
     with sqlite3.connect(DB_CONFIG) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT videoId FROM Videos WHERE videoTranscript IS NULL")
+        cursor.execute("SELECT videoId FROM Videos WHERE videoTranscript IS NULL ORDER BY rowid DESC")
         video_ids = [row[0] for row in cursor.fetchall()]
     return video_ids
 
+def transcript_exists(video_id: str) -> bool:
+    """
+    Check if a transcript exists for the video using the API (much faster than fetching).
+    Returns True if transcript exists, False otherwise.
+    """
+    try:
+        # Create API instance without fetching the content
+        api = YouTubeTranscriptApi()
+        api.list(video_id)
+        logging.info(f"Transcript available for {video_id} (API check)")
+        return True
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return False
+    except Exception as e:
+        error_msg = str(e).lower()
+        # If it's about the video itself, it likely doesn't have transcripts
+        if "video is no longer available" in error_msg or "video unavailable" in error_msg:
+            return False
+        if "age-restricted" in error_msg or "age restricted" in error_msg:
+            return False
+            
+        # For IP blocks or any other error, we'll assume it might have transcripts
+        # and try with the proxy in the actual fetch
+        if "ip" in error_msg and "block" in error_msg:
+            logging.info(f"IP block detected during API check for {video_id}, will try with proxy")
+        else:
+            logging.info(f"Error during API check for {video_id}, will try with proxy: {e}")
+            
+        return True
+
 def get_transcript(video_id: str) -> tuple:
     """
-    Get transcript for a video with language preference.
-    Prioritizes manually created transcripts in Portuguese first, then English,
-    then falls back to auto-generated transcripts if necessary.
+    Get transcript for a video using YouTube Transcript API with Webshare proxy.
     
     Returns:
         (success, transcript_text, language)
     """
-    try:
-        # Get list of available transcripts
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        
-        # First try to find manually created transcripts
-        manual_transcript = None
-        for transcript in transcript_list:
-            if not transcript.is_generated:
-                if transcript.language_code == 'pt-BR' or transcript.language_code == 'pt':
-                    # Found manual Portuguese transcript - ideal case
-                    transcript_data = transcript.fetch()
-                    return True, format_transcript_text(transcript_data), transcript.language_code
-                elif transcript.language_code.startswith('en'):
-                    # Store English transcript but keep looking for Portuguese
-                    manual_transcript = (transcript.fetch(), transcript.language_code)
-        
-        # Use the stored manual English transcript if found
-        if manual_transcript:
-            return True, format_transcript_text(manual_transcript[0]), manual_transcript[1]
-        
-        # Try auto-generated transcripts with language preference
-        try:
-            # Try Portuguese first
-            transcript = transcript_list.find_transcript(['pt', 'pt-BR'])
-            transcript_data = transcript.fetch()
-            return True, format_transcript_text(transcript_data), transcript.language_code
-        except:
-            # Fall back to English
-            try:
-                transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
-                transcript_data = transcript.fetch()
-                return True, format_transcript_text(transcript_data), transcript.language_code
-            except:
-                # Last resort: just get any available transcript
-                transcript = transcript_list.find_transcript(['pt', 'en', 'es'])
-                transcript_data = transcript.fetch()
-                return True, format_transcript_text(transcript_data), transcript.language_code
-    
-    except NoTranscriptFound:
+    # First quickly check if transcript exists using the API
+    if not transcript_exists(video_id):
+        logging.info(f"No transcript available for {video_id} (API check)")
         return False, "No transcript available for this video", None
-    except TranscriptsDisabled:
-        return False, "Transcripts are disabled for this video", None
-    except Exception as e:
-        # If an error occurs, try one more time unless it's a known non-retriable error
-        error_msg = str(e).lower()
-        if "video is no longer available" in error_msg or "video unavailable" in error_msg:
-            return False, "Video is no longer available", None
-        if "age-restricted" in error_msg or "age restricted" in error_msg:
-            return False, "Video is age restricted", None
-        try:
-            # Retry once
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            # Repeat the same logic as above for retry
-            manual_transcript = None
-            for transcript in transcript_list:
-                if not transcript.is_generated:
-                    if transcript.language_code == 'pt-BR' or transcript.language_code == 'pt':
-                        transcript_data = transcript.fetch()
-                        return True, format_transcript_text(transcript_data), transcript.language_code
-                    elif transcript.language_code.startswith('en'):
-                        manual_transcript = (transcript.fetch(), transcript.language_code)
-            if manual_transcript:
-                return True, format_transcript_text(manual_transcript[0]), manual_transcript[1]
-            try:
-                transcript = transcript_list.find_transcript(['pt', 'pt-BR'])
-                transcript_data = transcript.fetch()
-                return True, format_transcript_text(transcript_data), transcript.language_code
-            except:
-                try:
-                    transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
-                    transcript_data = transcript.fetch()
-                    return True, format_transcript_text(transcript_data), transcript.language_code
-                except:
-                    transcript = transcript_list.find_transcript(['pt', 'en', 'es'])
-                    transcript_data = transcript.fetch()
-                    return True, format_transcript_text(transcript_data), transcript.language_code
-        except Exception as retry_e:
-            retry_msg = str(retry_e).lower()
-            if "video is unavailable" in retry_msg or "video unavailable" in retry_msg:
-                return False, "Video is no longer available", None
-            if "age-restricted" in retry_msg or "age restricted" in retry_msg:
-                return False, "Video is age restricted", None
-            return False, f"Error retrieving transcript after retry: {str(retry_e)}", None
-        return False, f"Error retrieving transcript for {video_id}: {str(e)}", None
-
-def format_transcript_text(transcript_data: list) -> str:
-    """Format transcript data into readable text with timestamps."""
-    formatted_text = ""
+    
     try:
-        # Handle different types of transcript data
-        if not isinstance(transcript_data, list):
-            # If it's not a list, try to convert it to a list
-            try:
-                # Some transcript objects might have a .get_transcript() method
-                if hasattr(transcript_data, 'get_transcript'):
-                    transcript_data = transcript_data.get_transcript()
-                # Other transcript objects might be iterable but not a list
-                elif hasattr(transcript_data, '__iter__') and not isinstance(transcript_data, str):
-                    transcript_data = list(transcript_data)
-                else:
-                    # If we can't handle it, log and return empty
-                    logging.error(f"Unhandled transcript data type: {type(transcript_data)}")
-                    return "Transcript format not supported"
-            except Exception as e:
-                logging.error(f"Error processing transcript data: {str(e)}")
-                return "Error processing transcript"
+        logging.info(f"Getting transcript for {video_id} using YouTube API with Webshare proxy")
         
-        # Now process each item in the transcript data
-        for item in transcript_data:
-            # Handle both dictionary access and attribute access
-            if isinstance(item, dict):
-                start_time = format_timestamp(item.get('start', 0))
-                text = item.get('text', '').replace('\n', ' ')
-            else:
-                # Try attribute access for objects
-                start_time = format_timestamp(getattr(item, 'start', 0))
-                text = getattr(item, 'text', '').replace('\n', ' ')
-                
-            formatted_text += f"[{start_time}] {text}\n"
-            
+        # Create API instance with proxy
+        ytt_api = create_youtube_api()
+        
+        # Fetch transcript with preference for Portuguese then English
+        transcript = ytt_api.fetch(video_id, languages=['pt', 'pt-BR', 'en'])
+        
+        if not transcript or not hasattr(transcript, 'snippets'):
+            return False, "Failed to fetch transcript data", None
+        
+        # Format the transcript into text
+        formatted_transcript = format_transcript_from_api(transcript)
+        
+        return True, formatted_transcript, transcript.language_code
+        
+    except (NoTranscriptFound, TranscriptsDisabled):
+        return False, "No transcript available for this video", None
     except Exception as e:
-        logging.error(f"Error formatting transcript: {str(e)}")
-        return f"Error formatting transcript: {str(e)}"
-        
-    return formatted_text
+        logging.error(f"Error getting transcript for {video_id}: {e}")
+        return False, f"Error: {str(e)}", None
 
-def format_timestamp(seconds: float) -> str:
+def format_transcript_from_api(transcript) -> str:
+    """
+    Format transcript data from the YouTube Transcript API into readable text.
+    
+    Args:
+        transcript: A FetchedTranscript object from the YouTube Transcript API
+        
+    Returns:
+        Formatted transcript text with timestamps
+    """
+    formatted_lines = []
+    
+    try:
+        # Process each snippet in the transcript
+        for snippet in transcript.snippets:
+            timestamp = format_timestamp_from_seconds(snippet.start)
+            text = snippet.text.replace('\n', ' ')
+            formatted_lines.append(f"[{timestamp}] {text}")
+        
+        return "\n".join(formatted_lines)
+    except Exception as e:
+        logging.error(f"Error formatting transcript: {e}")
+        
+        # Fallback to raw data if available
+        try:
+            raw_data = transcript.to_raw_data()
+            formatted_lines = []
+            for item in raw_data:
+                timestamp = format_timestamp_from_seconds(item.get('start', 0))
+                text = item.get('text', '').replace('\n', ' ')
+                formatted_lines.append(f"[{timestamp}] {text}")
+            return "\n".join(formatted_lines)
+        except:
+            return f"Error formatting transcript: {str(e)}"
+
+def format_timestamp_from_seconds(seconds: float) -> str:
     """Convert seconds to MM:SS format."""
     mins, secs = divmod(int(seconds), 60)
     return f"{mins:02d}:{secs:02d}"
@@ -233,15 +255,16 @@ def process_video_transcript(video_id: str) -> tuple:
         if row and row[0]:
             return True, f"Transcript already exists for video {video_id}"
         
-        # Download transcript
+        # Download transcript using YouTube API with Webshare proxy
         success, transcript_text, language = get_transcript(video_id)
         if not success:
-            return False, transcript_text  # transcript_text contains error message in this case
+            return False, transcript_text  # contains error message
         
-        # Update database with the full transcript text
+        # Update database with the transcript
         update_video_transcript(conn, video_id, transcript_text, language)
         
-        return True, f"Downloaded and stored {language} transcript for video {video_id} directly in database"
+        # Success message (will be colored green by the formatter)
+        return True, f"Downloaded and stored {language} transcript for video {video_id} using YouTube API"
     except Exception as e:
         return False, f"Error processing transcript for video {video_id}: {str(e)}"
     finally:
@@ -249,15 +272,16 @@ def process_video_transcript(video_id: str) -> tuple:
             conn.close()
 
 def main():
-    logging.info("Starting parallel transcript download script.")
+    logging.info("Starting transcript download script using YouTube API with Webshare proxy.")
     video_ids = get_videos_needing_transcript()
     total_videos = len(video_ids)
     logging.info("Total videos to process: %d", total_videos)
+    logging.info("Processing videos from newest to oldest")
     start_time = time.time()
     processed_count = 0
     
-    # Use a thread pool with max 5 workers
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    # Use a thread pool with reduced workers to avoid overwhelming the system
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         # Submit all tasks to the executor
         future_to_video = {
             executor.submit(process_video_transcript, video_id): video_id 
@@ -272,6 +296,7 @@ def main():
             try:
                 success, message = future.result()
                 if success:
+                    # Success messages will be colored green by the formatter
                     logging.info("[%d/%d] %s", processed_count, total_videos, message)
                 else:
                     logging.warning("[%d/%d] %s", processed_count, total_videos, message)
