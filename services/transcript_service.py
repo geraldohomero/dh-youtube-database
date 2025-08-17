@@ -3,15 +3,19 @@ import time
 from typing import Tuple, Optional
 
 try:
-    from data.transcriptions.transcript import get_transcript, format_transcript_text
+    from data.transcriptions.transcript import get_transcript, format_transcript_from_api as format_transcript_text
     TRANSCRIPT_AVAILABLE = True
 except ImportError:
     logging.error("Failed to import transcript module. Transcript functionality will be disabled.")
     TRANSCRIPT_AVAILABLE = False
-
+    
 class TranscriptService:
     def __init__(self):
         self.available = TRANSCRIPT_AVAILABLE
+        if self.available:
+            logging.info("Transcript functionality is available and enabled")
+        else:
+            logging.warning("Transcript functionality is disabled due to import errors")
     
     def get_transcript_with_retry(self, video_id: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
