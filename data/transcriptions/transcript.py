@@ -66,8 +66,6 @@ def create_youtube_api():
         proxy_config = WebshareProxyConfig(
             proxy_username=proxy_username,
             proxy_password=proxy_password,
-            # Opcional: você pode filtrar por localização
-            # filter_ip_locations=["br", "us"],
         )
         
         # Instanciando a API com a configuração de proxy
@@ -281,7 +279,7 @@ def main():
     processed_count = 0
     
     # Use a thread pool with reduced workers to avoid overwhelming the system
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         # Submit all tasks to the executor
         future_to_video = {
             executor.submit(process_video_transcript, video_id): video_id 
