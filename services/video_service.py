@@ -32,7 +32,13 @@ class VideoProcessingService:
         
         return video_data
     
-    def process_channel_videos(self, channel_id: str, existing_video_ids: set) -> None:
+    def process_channel_videos(
+        self, 
+        channel_id: str, 
+        existing_video_ids: set,
+        published_after: Optional[str] = None,
+        published_before: Optional[str] = None
+    ) -> None:
         """
         Process all videos for a given channel.
         """
@@ -41,7 +47,14 @@ class VideoProcessingService:
             logging.warning("Skipping channel %s due to missing details.", channel_id)
             return
 
-        video_ids = self.youtube_client.get_channel_videos(channel_id)
+        # Only pass date parameters if they are provided
+        kwargs = {}
+        if published_after is not None:
+            kwargs['published_after'] = published_after
+        if published_before is not None:
+            kwargs['published_before'] = published_before
+
+        video_ids = self.youtube_client.get_channel_videos(channel_id, **kwargs)
         channel_data = {
             'channelId': details.channel_id,
             'channelName': details.channel_name,

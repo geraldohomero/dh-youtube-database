@@ -158,65 +158,90 @@ class YouTubeAPIClient:
                 if not next_page_token:
                     break
 
-        except Exception:
-            logging.error("Unexpected error fetching comments for video %s. Skipping.", video_id)
-            return []
-
+        except Exception as e:
+            logging.error("Error fetching comments for video %s: %s", video_id, e)
         return comments
 
-    def get_channel_videos(self, channel_id: str) -> List[str]:
+    def get_channel_videos(
+        self, 
+        channel_id: str, 
+        published_after: Optional[str] = None, 
+        published_before: Optional[str] = None
+    ) -> List[str]:
         """
-        Get list of all video IDs for a given channel using the uploads playlist.
+        Get list of all video IDs for a given channel, with optional date filters.
+        Uses search.list endpoint when date filters are provided, channels().list otherwise.
         """
         video_ids = []
         next_page_token = None
         
         try:
-            # uploads playlist ID for this channel
-            channel_request = self.youtube.channels().list(
-                part="contentDetails",
-                id=channel_id
-            )
-            channel_response = self.safe_execute(channel_request)
-            
-            if not channel_response.get('items'):
-                logging.error("Could not find channel with ID: %s", channel_id)
-                return []
-            
-            # Extract the uploads playlist ID
-            uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-            logging.info("Found uploads playlist ID: %s for channel: %s", uploads_playlist_id, channel_id)
-            
-            # fetch all videos from this playlist
-            while True:
-                playlist_request = self.youtube.playlistItems().list(
-                    part="snippet",
-                    playlistId=uploads_playlist_id,
-                    maxResults=50,
-                    pageToken=next_page_token
+            # Use search endpoint only when date filters are provided
+            if published_after is not None or published_before is not None:
+                logging.info(f"Fetching videos for channel {channel_id} between {published_after} and {published_before}")
+                
+                while True:
+                    search_request = self.youtube.search().list(
+                        part="snippet",
+                        channelId=channel_id,
+                        maxResults=50,
+                        pageToken=next_page_token,
+                        type='video',
+                        order='date',
+                        publishedAfter=published_after,
+                        publishedBefore=published_before
+                    )
+                    search_response = self.safe_execute(search_request)
+                    
+                    for item in search_response.get('items', []):
+                        if item['id']['kind'] == 'youtube#video':
+                            video_ids.append(item['id']['videoId'])
+                    
+                    next_page_token = search_response.get('nextPageToken')
+                    if not next_page_token:
+                        break
+                    
+                    time.sleep(0.5)
+            else:
+                # Use channels endpoint to get uploads playlist for all videos
+                logging.info(f"Fetching all videos for channel {channel_id}")
+                
+                channel_request = self.youtube.channels().list(
+                    part="contentDetails",
+                    id=channel_id
                 )
-                playlist_response = self.safe_execute(playlist_request)
+                channel_response = self.safe_execute(channel_request)
                 
-                for item in playlist_response.get('items', []):
-                    video_ids.append(item['snippet']['resourceId']['videoId'])
-                
-                next_page_token = playlist_response.get('nextPageToken')
-                if not next_page_token:
-                    break
-                
-                # Add a slight delay to respect API quota
-                time.sleep(0.5)
+                if channel_response.get('items'):
+                    uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+                    
+                    while True:
+                        playlist_request = self.youtube.playlistItems().list(
+                            part="snippet",
+                            playlistId=uploads_playlist_id,
+                            maxResults=50,
+                            pageToken=next_page_token
+                        )
+                        playlist_response = self.safe_execute(playlist_request)
+                        
+                        for item in playlist_response.get('items', []):
+                            video_ids.append(item['snippet']['resourceId']['videoId'])
+                        
+                        next_page_token = playlist_response.get('nextPageToken')
+                        if not next_page_token:
+                            break
+                        
+                        time.sleep(0.5)
 
-            # Retrieve and log channel name along with video count
             channel_response = self.youtube.channels().list(
                 part="snippet",
                 id=channel_id
             ).execute()
             if channel_response.get("items"):
                 channel_name = channel_response["items"][0]["snippet"]["title"]
-                logging.info("Found %d videos for channel '%s' (ID: %s)", len(video_ids), channel_name, channel_id)
+                logging.info("Found %d videos for channel '%s' (ID: %s) in the specified period.", len(video_ids), channel_name, channel_id)
             else:
-                logging.info("Found %d videos for channel (ID: %s)", len(video_ids), channel_id)
+                logging.info("Found %d videos for channel (ID: %s) in the specified period.", len(video_ids), channel_id)
         except Exception as e:
             logging.error("Error fetching channel videos for channel %s: %s", channel_id, e)
         
