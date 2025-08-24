@@ -29,3 +29,7 @@ apikey_index.txt
 *.mp3
 
 .stfolder
+
+*.png
+
+*.csv
