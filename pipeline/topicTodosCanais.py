@@ -1,23 +1,16 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
-from sklearn.decomposition import TruncatedSVD
-from sklearn.pipeline import make_pipeline
-import matplotlib.cm as cm
-from nltk.corpus import stopwords
 import nltk
+from nltk.corpus import stopwords
+import matplotlib.pyplot as plt
+import seaborn as sns
+import re
 
 # Configuração para visualizações
-plt.style.use('seaborn-v0_8-whitegrid')
-sns.set(font_scale=1.2)
 PALETTE = 'viridis'
-OUTPUT_DIR = 'pipeline/output_vis2'
+OUTPUT_DIR = 'pipeline/output_vis3TodosCanais'
 
 # Certifique-se de que o diretório de saída existe
 import os
@@ -85,7 +78,6 @@ try:
 except LookupError:
     nltk.download('stopwords')
 
-# Stopwords expandidas (manual, sem spaCy)
 STOPWORDS = set(stopwords.words('portuguese'))
 STOPWORDS.update([
     'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'querer','algum', 
@@ -120,15 +112,20 @@ STOPWORDS.update([
     'nona', 'décima','né', 'tá', 'beleza', 'show', 'bicho', 'parada', 'caraca', 'vamos', 'vai', 'vou', 'vamos', 
     'olha', 'boa', 'bom', 'pessoas', 'foi', 'caraca', 'véi', 'mó', 'falando', 'dar', 'acho', 'pode', 'tô', 
     'to', 'ah', 'sei', 'vão', 'você', 'quer', 'quero', 'cu', 'merda', 'falei', 'live', 'valeu', 'certo', 'dar', 'obrigado',
-    'ver', 'fez', 'fala', 'tava', 'estava', '__', 'embora', 'acho', 'ia', 'humano', 'humanos', 'fazer', 'fiz', 'fizeram', 
-    'fizer', 'têm', 'temos', 'tinha', 'tiveram', 'tiver', 'tivesse', 'faz', 'sabe', 'viu', 'deixa', 'vosso', 'amém', 
-    'graças', 'amém', 'aleluia', 'aleluia', 'amém', 'graças', 'graças', 'deus', 'deus', 'senhor', 'senhor', 'jesus',
+    'ver', 'fez', 'fala', 'tava', 'estava', '__', 'embora', 'acho', 'ia', 'ai', 'humano', 'humanos', 'fazer', 'fiz', 'fizeram', 
+    'fizer', 'têm', 'temos', 'tinha', 'tiveram', 'tiver', 'tivesse', 'faz', 'sabe', '[Música]', '[Music]', 'music', 'musica', 'aplausos', 'aplauso',
+    'musica', 'music', 'musica', 'musicas', 'musicas', 'ligado', 'falou', 'pessoal', 'fala', 'tipo', 'tá', 'é', 'éé', 'ééé', 'hum', 'hã', 'hãn', 'hãã', 'hãhã', 'ok', 'okay', 'mim', 'diga', 'áudio', 'audio', 'video', 'vídeo', 'use', 'an', 'armour', 'middle', 'ages', 'was', 'is', 'in', 'on', 'at', 'by', 'of', 'the', 'a', 'an', 'and', 'to', 'for', 'with', 'that', 'this', 'it', 'as', 'be', 'are', 'from', 'velho', 'bagulho', 'dois', 'nada', 'caraio', 'caralho', 'pqp', 'puta', 'merda', 'fodase', 'foda', 'foder', 'fodendo', 'fodida', 'fodido', 'foda-se', 'foda', 'jesus', 'maria', 'cristo', 'deus', 'santo', 'espirito', 'santa', 'espírito', 'santíssimo', 'cristo', 'viu', 'deixa', 'vosso', 'amém', 
+    'graças', 'amém', 'aleluia', 'aleluia', 'amém', 'graças', 'graças', 'deus', 'deus', 'senhor', 'senhor', 'jesus'
 ])
 
 # Função para remover stopwords de um texto
 def remover_stopwords(texto, stopwords_set):
+    # Normaliza para minúsculas e remove colchetes
+    texto = texto.lower().replace('[', '').replace(']', '')
+    # Remove todos os números
+    texto = re.sub(r'\d+', '', texto)
     palavras = texto.split()
-    palavras_filtradas = [palavra for palavra in palavras if palavra.lower() not in stopwords_set]
+    palavras_filtradas = [palavra for palavra in palavras if palavra not in stopwords_set]
     return " ".join(palavras_filtradas)
 
 # Função para filtrar bigramas com stopwords
@@ -141,7 +138,7 @@ def filtrar_bigramas_com_stopwords(bigramas, stopwords_set):
             bigramas_filtrados.append((bigrama, frequencia))
     return bigramas_filtrados
 
-# Carregue seus dados mais recentes
+# Carregar dados
 print("Carregando dados...")
 caminho_do_arquivo = "data/processed/transcripts_limpos5ComMetric.csv"
 try:
@@ -341,7 +338,7 @@ def analisar_bigramas_por_engajamento(df_analise, channel_name, periodo_str):
     analisar_visualizar_bigramas(df_baixo_eng, "VÍDEOS DE BAIXO ENGAJAMENTO", "baixo")
 
 def analisar_topicos_lda(df_analise, entity_name, periodo_str):
-    """Executa a análise de tópicos (LDA) e engajamento por tópico."""
+    """Executa a análise de tópicos (LDA) e engajamento por tópico, exportando tabela com exemplo representativo."""
     entity_name_safe = entity_name.replace(" ", "_").replace("/", "-")
     print(f"\n{'='*60}")
     print(f"Análise Temática (LDA) para: {entity_name} (Período: {periodo_str})")
@@ -355,14 +352,12 @@ def analisar_topicos_lda(df_analise, entity_name, periodo_str):
         return
 
     try:
-        # Configurações mais permissivas para permitir análise com poucos documentos
         vectorizer_lda = CountVectorizer(max_df=1.0, min_df=1, stop_words=list(STOPWORDS))
         X_lda = vectorizer_lda.fit_transform(corpus)
     except ValueError as e:
         print(f"Erro na vetorização LDA: {e}")
         return
     
-    # Ajustar número de tópicos para funcionar com poucos documentos
     if len(df_copy) == 1:
         num_topicos = 1
         print("Apenas um vídeo encontrado. Usando 1 tópico.")
@@ -374,17 +369,14 @@ def analisar_topicos_lda(df_analise, entity_name, periodo_str):
     try:
         lda = LatentDirichletAllocation(n_components=num_topicos, random_state=42)
         distribuicao_topicos = lda.fit_transform(X_lda)
-        
         df_copy['topico_dominante'] = distribuicao_topicos.argmax(axis=1)
-        
         engajamento_por_topico = df_copy.groupby('topico_dominante')[metricas].mean().sort_values(by='viewCount', ascending=False)
         engajamento_por_topico['num_videos'] = df_copy['topico_dominante'].value_counts()
-        
         feature_names_lda = vectorizer_lda.get_feature_names_out()
         topic_labels_map = {}
+        exemplos_representativos = []
         for topic_idx, topic in enumerate(lda.components_):
             top_indices = topic.argsort()[:-11:-1]
-            # Verificar se há palavras suficientes
             if len(top_indices) > 0:
                 top_palavras = [feature_names_lda[i] for i in top_indices]
                 palavras_exibir = min(3, len(top_palavras))
@@ -393,25 +385,44 @@ def analisar_topicos_lda(df_analise, entity_name, periodo_str):
             else:
                 topic_labels_map[topic_idx] = f"Tópico {topic_idx}: [vazio]"
                 print(f"Tópico #{topic_idx}: [sem palavras relevantes]")
-        
+            # Exemplo representativo: vídeo com maior probabilidade para o tópico
+            idx_exemplo = np.argmax(distribuicao_topicos[:, topic_idx])
+            exemplo_texto = df_copy.loc[idx_exemplo, 'videoTranscript'][:200] + "..."
+            exemplos_representativos.append(exemplo_texto)
         engajamento_por_topico['topic_label'] = engajamento_por_topico.index.map(topic_labels_map)
+        engajamento_por_topico['exemplo_representativo'] = exemplos_representativos
 
+        # Exporta tabela como PNG
+        tabela = engajamento_por_topico[['topic_label', 'viewCount', 'likeCount', 'commentCount', 'num_videos', 'exemplo_representativo']].reset_index(drop=True)
+        plt.figure(figsize=(18, 2 + len(tabela)*0.7))
+        plt.axis('off')
+        tbl = plt.table(cellText=tabela.values,
+                        colLabels=tabela.columns,
+                        cellLoc='left',
+                        loc='center',
+                        colWidths=[0.18, 0.09, 0.09, 0.09, 0.09, 0.46])
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(11)
+        tbl.scale(1, 1.7)
+        tabela_arquivo = f'{OUTPUT_DIR}/tabela_topicos_{entity_name_safe}_{periodo_str}.png'
+        plt.savefig(tabela_arquivo, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Tabela de tópicos exportada em: {tabela_arquivo}")
+
+        # ...gráfico de engajamento por tópico permanece...
         plt.figure(figsize=(16, 10))
         ax = sns.barplot(x='viewCount', y='topic_label', data=engajamento_por_topico, palette=PALETTE, orient='h')
         plt.title(f'Engajamento Médio por Tópico - {entity_name}\nPeríodo: {periodo_str}', fontsize=18, pad=20)
         plt.xlabel('Visualizações Médias', fontsize=14)
         plt.ylabel('Tópico (Top 3 Palavras)', fontsize=14)
-
         for i, row in enumerate(engajamento_por_topico.itertuples()):
             label_text = f'{int(row.viewCount):,} views ({row.num_videos} vídeos)'
             ax.text(row.viewCount, i, f' {label_text}', color='black', va='center', fontsize=11)
-
         plt.xlim(right=ax.get_xlim()[1] * 1.25)
         plt.tight_layout()
         engajamento_arquivo = f'{OUTPUT_DIR}/engajamento_topicos_{entity_name_safe}_{periodo_str}.png'
         plt.savefig(engajamento_arquivo, dpi=300, bbox_inches='tight')
         plt.close()
-        
         print(f"\nVisualização de engajamento por tópico salva em: {engajamento_arquivo}")
         print("\n--- Engajamento Médio por Tópico ---")
         print(engajamento_por_topico.round(0))
@@ -435,25 +446,6 @@ def analisar_periodo(df_periodo, nome_periodo):
     print("\n--- ANÁLISE GERAL DO PERÍODO ---")
     analisar_topicos_lda(df_periodo, "TODOS_OS_CANAIS", nome_periodo)
     analisar_bigramas_por_engajamento(df_periodo, "TODOS_OS_CANAIS", nome_periodo)
-
-    # 2. Análise por Canal
-    print("\n--- ANÁLISE INDIVIDUAL POR CANAL ---")
-    channel_ids = df_periodo['channelId'].unique()
-    for channel_id in channel_ids:
-        channel_name = get_channel_name(channel_id)
-        df_canal_periodo = df_periodo[df_periodo['channelId'] == channel_id]
-        
-        print(f"\n>>> Analisando Canal: {channel_name} ({len(df_canal_periodo)} vídeos) <<<")
-        
-        # Análise de Tópicos e Engajamento para o canal (agora funciona com 1 vídeo)
-        analisar_topicos_lda(df_canal_periodo, channel_name, nome_periodo)
-        
-        # Análise de Bigramas por engajamento para o canal (agora funciona com 1 vídeo)
-        analisar_bigramas_por_engajamento(df_canal_periodo, channel_name, nome_periodo)
-        
-        # Removido: Análise de Clustering para o canal (DBSCAN/KMeans)
-        # if len(df_canal_periodo) >= 3:
-        #     analyze_clusters(df_canal_periodo, channel_name, nome_periodo)
 
 # --- ESTRUTURA PRINCIPAL DA ANÁLISE ---
 

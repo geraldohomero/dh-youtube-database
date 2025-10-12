@@ -16,8 +16,8 @@ from typing import Generator, List, Optional
 # Configuração de diretórios
 # ------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
-RAW_DB_PATH = BASE_DIR / "db" / "YouTubeStatsPipeline.sqlite3"
-OUTPUT_PATH = BASE_DIR / "data" / "processed" / "transcripts_limpos2Metric.csv"
+RAW_DB_PATH = BASE_DIR / "db" / "YouTubeStatsPipe2.sqlite3"
+OUTPUT_PATH = BASE_DIR / "data" / "processed" / "transcripts_limpos4ComMetric.csv"
 
 # Configuração de memória - otimizada para 32GB RAM
 INITIAL_CHUNK_SIZE = 2000  # Aumentado de 500 para 2000
@@ -238,7 +238,7 @@ def preprocess_text_batch(texts, batch_size: int = 64, n_process: int = N_PROCES
 # ------------------------------------------------------------
 # Pipeline
 # ------------------------------------------------------------
-def process_chunk(chunk, start_date, end_date):
+def process_chunk(chunk):
     """Processa um chunk de dados."""
     # Converte 'publishedAt' para datetime, tratando erros
     chunk['publishedAt'] = pd.to_datetime(chunk['publishedAt'], errors='coerce')
@@ -249,41 +249,37 @@ def process_chunk(chunk, start_date, end_date):
         if metric in chunk.columns:
             chunk[metric] = pd.to_numeric(chunk[metric], errors='coerce')
     
-    # Filtra o DataFrame para o período desejado
-    mask = (chunk['publishedAt'] >= start_date) & (chunk['publishedAt'] < end_date)
-    df_filtrado = chunk[mask].copy()
-    
-    if len(df_filtrado) == 0:
+    if len(chunk) == 0:
         return None
     
-    print(f"Processando chunk com {len(df_filtrado)} registros...")
+    print(f"Processando chunk com {len(chunk)} registros...")
     
     # Lista as colunas presentes para verificação
-    print(f"Colunas disponíveis: {df_filtrado.columns.tolist()}")
+    print(f"Colunas disponíveis: {chunk.columns.tolist()}")
     
     # Verifica se as métricas de engajamento estão presentes
-    metrics_present = [metric for metric in engagement_metrics if metric in df_filtrado.columns]
+    metrics_present = [metric for metric in engagement_metrics if metric in chunk.columns]
     if metrics_present:
         print(f"Métricas de engajamento incluídas: {metrics_present}")
     else:
         print("AVISO: Nenhuma métrica de engajamento encontrada nos dados.")
     
     # Mais otimizações para usar mais memória disponível
-    df_filtrado["cleanTranscript"] = preprocess_text_batch(
-        df_filtrado["videoTranscript"].tolist(),
+    chunk["cleanTranscript"] = preprocess_text_batch(
+        chunk["videoTranscript"].tolist(),
         batch_size=64,
         n_process=N_PROCESS, 
         show_progress=True
     )
     
     # Remove a coluna videoTranscript para economizar espaço
-    df_filtrado = df_filtrado.drop(columns=['videoTranscript'])
+    chunk = chunk.drop(columns=['videoTranscript'])
     
     # Garantir que valores nulos nas métricas sejam substituídos por zeros
     for metric in metrics_present:
-        df_filtrado[metric] = df_filtrado[metric].fillna(0).astype(int)
+        chunk[metric] = chunk[metric].fillna(0).astype(int)
     
-    return df_filtrado
+    return chunk
 
 def main():
     # Add global declaration for CHUNK_SIZE
@@ -353,22 +349,33 @@ def main():
             print(f"Reduzindo para {CHUNK_SIZE} registros por chunk.")
             continue  # Tente novamente com chunk menor
             
-        processed_chunk = process_chunk(chunk, start_date, end_date)
+        processed_chunk = process_chunk(chunk)
         
         # Liberar memória do chunk original imediatamente
         del chunk
         gc.collect()
         
         if processed_chunk is not None and len(processed_chunk) > 0:
-            # Verificar e informar métricas disponíveis
+            # Filtra o DataFrame para o período desejado APÓS o processamento
+            mask = (processed_chunk['publishedAt'] >= start_date) & (processed_chunk['publishedAt'] < end_date)
+            df_filtrado = processed_chunk[mask].copy()
+            
+            if len(df_filtrado) == 0:
+                print("Nenhum registro no período para este chunk.")
+                del processed_chunk
+                del df_filtrado
+                gc.collect()
+                offset += CHUNK_SIZE
+                continue
+            
             engagement_metrics = ['viewCount', 'likeCount', 'commentCount']
-            metrics_present = [metric for metric in engagement_metrics if metric in processed_chunk.columns]
+            metrics_present = [metric for metric in engagement_metrics if metric in df_filtrado.columns]
             
             if metrics_present:
                 print(f"Exportando com métricas de engajamento: {metrics_present}")
                 # Mostrar estatísticas básicas
                 for metric in metrics_present:
-                    print(f"  - {metric}: média = {processed_chunk[metric].mean():.1f}, máx = {processed_chunk[metric].max()}")
+                    print(f"  - {metric}: média = {df_filtrado[metric].mean():.1f}, máx = {df_filtrado[metric].max()}")
             else:
                 print("AVISO: Nenhuma métrica de engajamento será exportada.")
             
@@ -377,9 +384,9 @@ def main():
             header = first_chunk
             
             # Escrever em pedaços maiores para economizar operações de I/O
-            write_chunk_size = min(500, len(processed_chunk))  # Aumentado de 100 para 500
-            for i in range(0, len(processed_chunk), write_chunk_size):
-                sub_df = processed_chunk.iloc[i:i+write_chunk_size]
+            write_chunk_size = min(500, len(df_filtrado))  # Aumentado de 100 para 500
+            for i in range(0, len(df_filtrado), write_chunk_size):
+                sub_df = df_filtrado.iloc[i:i+write_chunk_size]
                 sub_df.to_csv(
                     OUTPUT_PATH, 
                     index=False, 
@@ -395,14 +402,16 @@ def main():
             if first_chunk:
                 first_chunk = False
             
-            total_processed += len(processed_chunk)
-            print(f"Salvos {len(processed_chunk)} registros no arquivo. Total: {total_processed}")
+            total_processed += len(df_filtrado)
+            print(f"Salvos {len(df_filtrado)} registros no arquivo. Total: {total_processed}")
         
         chunks_processed += 1
         offset += CHUNK_SIZE
         
         # Liberar memória do chunk processado explicitamente
         del processed_chunk
+        if 'df_filtrado' in locals():
+            del df_filtrado
         gc.collect()
         
         # Verificar uso de memória e ajustar o tamanho do chunk se necessário

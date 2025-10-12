@@ -17,7 +17,7 @@ import nltk
 plt.style.use('seaborn-v0_8-whitegrid')
 sns.set(font_scale=1.2)
 PALETTE = 'viridis'
-OUTPUT_DIR = 'pipeline/output_vis2'
+OUTPUT_DIR = 'pipeline/output_visDidi'
 
 # Certifique-se de que o diretório de saída existe
 import os
@@ -85,44 +85,22 @@ try:
 except LookupError:
     nltk.download('stopwords')
 
-# Stopwords expandidas (manual, sem spaCy)
+# Stopwords expandidas
 STOPWORDS = set(stopwords.words('portuguese'))
 STOPWORDS.update([
-    'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'querer','algum', 
-    'ele', 'ela', 'eles', 'elas', 'esse', 'essa', 'isso', 'este', 'esta', 'isto', 'carar', 'pra',
+    'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'querer','algum', 'live', 'tá', 'dá',
+    'ele', 'ela', 'eles', 'elas', 'esse', 'essa', 'isso', 'este', 'esta', 'isto', 'carar', 'pra', 'ver', 'olhada', 
     'aí', 'aqui', 'lá', 'ali', 'hoje', 'dia', 'gente', 'mulher', 'homem', 'vez', 'vezes', 'senhor', 'senhora',
-    'vida', 'alto', 'ser', 'estar', 'ter', 'fazer', 'ir', 'vir', 'falar', 'dizer', 'acontecer', 'ceu', 'céu', 'amor',
+    'vida', 'alto', 'ser', 'estar', 'ter', 'fazer', 'ir', 'vir', 'falar', 'dizer', 'acontecer', 'ceu', 'céu', 'amor'
     'canal', 'entrar', 'gente', 'like', 'dislike', 'rede', 'social', 'feedback', 'comentário', 'ebook', 'grátis',
     'importante', 'inscrever', 'inscritar', 'link', 'cara', 'book', 'mandar', 'mensagem', 'parada', 'seguinte',
     'pessoa', 'ativar', 'notificação', 'notificações', 'clique', 'tocar', 'assunto', 'descrição', 'baixar', 'outro',
     'achar', 'brother', 'beleza', 'irmão', 'entender', 'rapaziar', 'querido', 'enfim', 'aproveitar', 'clicar', 'chat', 
     'cupom', 'hein', 'trocar', 'ideia', 'música', 'musica', 'embaixo', 'abraço', 'caixinha', 'galera', 'nenhum', 'afinal',
     'deixar', 'tornar', 'and', 'the', 'you', 'with', 'thi', 'this', 'your', 'yours', 'that', 'are', 'know', 'for', 'just',
-    'when', 'where', 'who', 'what', 'why', 'how', 'all', 'not', 'women', 'woman', 'man', 'men', 'one', 'have', 'out', 
-    'olhar', 'mano', 'manos',
-    # Adicionadas abaixo
-    'então', 'também', 'agora', 'sempre', 'nunca', 'todo', 'toda', 'todos', 'todas', 'cada', 'sobre', 'porque', 'porquê', 
-    'por', 'para', 'com', 'sem', 'mais', 'menos', 'muito', 'pouco', 'já', 'ainda', 'antes', 'depois', 'durante', 'até', 
-    'desde', 'entre', 'sobre',
-    'se', 'só', 'sua', 'seu', 'suas', 'seus', 'nosso', 'nossa', 'nossos', 'nossas', 'meu', 'minha', 'meus', 'minhas', 
-    'deles', 'delas', 'qual', 'quais', 'quanto', 'quantos', 'quanta', 'quantas', 'onde', 'quando', 'como', 'quem', 
-    'algumas', 'alguns', 'nenhuma', 'nenhumas', 'nenhuns', 'outros', 'outra', 'outras', 'outro', 'mesmo', 'mesma', 
-    'tanto', 'tanta', 'tantos', 'tantas', 'tal', 'tais', 'lá', 'aqui', 'ali', 'acolá', 'cá', 'daqui', 'dali', 'acolá', 
-    'lá', 'aí', 'mesmos', 'mesmas', 'dele', 'dela', 'qualquer', 'alguma',
-    'e', 'ou', 'mas', 'nem', 'também', 'pois', 'logo', 'portanto', 'contudo', 'todavia', 'porém', 'entretanto', 'assim', 
-    'desse', 'dessa', 'disso', 'desse', 'desses', 'dessas', 'deste', 'desta', 'destes', 'destas', 'aquele', 'aquela', 
-    'aqueles', 'aquelas', 'isso', 'isto', 'aquilo','bem', 'mal', 'sim', 'não', 'ok', 'tá', 'tudo', 'tipo', 'coisa', 
-    'coisas', 'negócio', 'negócios', 'caso', 'casos','forma', 'formas','modo', 'modos', 'maneira', 'maneiras', 'vez', 
-    'vezes', 'hora', 'horas', 'ano', 'anos', 'mes', 'mês', 'meses',  'semana', 'semanas','dia', 'dias', 'noite', 
-    'noites', 'manhã', 'manhãs', 'tarde', 'tardes', 'tempo', 'tempos', 'momento', 'momentos','parte', 'partes','lado', 
-    'lados', 'frente', 'costas', 'direita', 'esquerda', 'cima', 'baixo', 'dentro', 'fora', 'perto', 'longe', 'junto', 
-    'junto', 'junto', 'primeiro', 'segunda', 'segundo', 'terceiro', 'quarta', 'quinto', 'sexta', 'sétima', 'oitava', 
-    'nona', 'décima','né', 'tá', 'beleza', 'show', 'bicho', 'parada', 'caraca', 'vamos', 'vai', 'vou', 'vamos', 
-    'olha', 'boa', 'bom', 'pessoas', 'foi', 'caraca', 'véi', 'mó', 'falando', 'dar', 'acho', 'pode', 'tô', 
-    'to', 'ah', 'sei', 'vão', 'você', 'quer', 'quero', 'cu', 'merda', 'falei', 'live', 'valeu', 'certo', 'dar', 'obrigado',
-    'ver', 'fez', 'fala', 'tava', 'estava', '__', 'embora', 'acho', 'ia', 'humano', 'humanos', 'fazer', 'fiz', 'fizeram', 
-    'fizer', 'têm', 'temos', 'tinha', 'tiveram', 'tiver', 'tivesse', 'faz', 'sabe', 'viu', 'deixa', 'vosso', 'amém', 
-    'graças', 'amém', 'aleluia', 'aleluia', 'amém', 'graças', 'graças', 'deus', 'deus', 'senhor', 'senhor', 'jesus',
+    'when', 'where', 'who', 'what', 'why', 'how', 'when', 'where', 'who', 'what', 'why', 'how', 'when', 'where', 'who', 'what', 
+    'why', 'how', 'all', 'not', 'women', 'woman', 'man', 'men', 'one', 'have', 'out', 'olhar', 'mano', 'manos',
+    
 ])
 
 # Função para remover stopwords de um texto
@@ -141,6 +119,10 @@ def filtrar_bigramas_com_stopwords(bigramas, stopwords_set):
             bigramas_filtrados.append((bigrama, frequencia))
     return bigramas_filtrados
 
+# ID do canal específico a ser analisado
+CANAL_ESPECIFICO_ID = 'UCpJ3jHK9lTA7tElmldAGOGA'
+CANAL_ESPECIFICO_NOME = get_channel_name(CANAL_ESPECIFICO_ID)
+
 # Carregue seus dados mais recentes
 print("Carregando dados...")
 caminho_do_arquivo = "data/processed/transcripts_limpos5ComMetric.csv"
@@ -149,7 +131,7 @@ try:
     print(f"Carregados {len(df)} vídeos.")
     
     # Verificar e exibir as colunas disponíveis
-    print("Colunas disponíveis no DataFrame:")
+    print("Colunas disponíveis no DataFrameUCpJ3jHK9lTA7tElmldAGOGA:")
     print(df.columns.tolist())
     
     # Verificar se existem colunas relacionadas a métricas
@@ -228,7 +210,7 @@ if not all(col in df.columns for col in required_columns):
             # Criar amostra de IDs de canal para demonstração
             sample_channels = list(CHANNEL_NAMES.keys())[:5]  # Usar apenas 5 canais
             df['channelId'] = np.random.choice(sample_channels, size=len(df))
-    
+
     if 'videoTranscript' not in df.columns:
         # Verificar alternativas
         transcript_cols = [col for col in df.columns if 'transcript' in col.lower() or 'text' in col.lower()]
@@ -239,6 +221,11 @@ if not all(col in df.columns for col in required_columns):
             print("ERRO FATAL: Não foi possível encontrar coluna de transcrição. A análise não pode continuar.")
             exit(1)
 
+# Filtrar para apenas o canal específico
+df = df[df['channelId'] == CANAL_ESPECIFICO_ID]
+print(f"Filtrado para canal específico: {CANAL_ESPECIFICO_NOME} ({CANAL_ESPECIFICO_ID})")
+print(f"Total de vídeos desse canal: {len(df)}")
+
 # Agora podemos continuar com os filtros
 df.dropna(subset=required_columns + [m for m in metricas if m in df.columns], inplace=True)
 df = df[df['videoTranscript'].str.strip() != '']
@@ -248,8 +235,24 @@ print("Removendo stopwords das transcrições antes da análise...")
 df['videoTranscript'] = df['videoTranscript'].apply(lambda x: remover_stopwords(x, STOPWORDS))
 print("Stopwords removidas.")
 
-
 print(f"Dados prontos para análise: {len(df)} vídeos com métricas e transcrição.")
+
+# Garante que o DataFrame tenha as colunas do banco, na ordem correta
+db_columns = [
+    'videoId',
+    'channelId',
+    'videoTitle',
+    'videoTranscript',
+    'publishedAt',
+    'transcriptLanguage',
+    'viewCount',
+    'likeCount',
+    'commentCount'
+]
+for col in db_columns:
+    if col not in df.columns:
+        df[col] = np.nan
+df = df[db_columns]
 
 # --- FUNÇÕES DE ANÁLISE REUTILIZÁVEIS ---
 
@@ -286,7 +289,7 @@ def analisar_bigramas_por_engajamento(df_analise, channel_name, periodo_str):
             print(f"\n--- {titulo} ---")
             print("Nenhum vídeo neste grupo.")
             return None
-        
+
         corpus = dataframe['videoTranscript']
         # Sempre usar min_df=1 para permitir análise mesmo com 1 vídeo
         min_df = 1
@@ -325,16 +328,17 @@ def analisar_bigramas_por_engajamento(df_analise, channel_name, periodo_str):
         plt.title(f'Top {top_n} Bigramas - {titulo}\n{channel_name} - {periodo_str}', fontsize=16)
         plt.xlabel('Frequência', fontsize=14)
         plt.ylabel('Bigramas', fontsize=14)
-        
         for i, v in enumerate(df_bigramas['Frequência']):
             ax.text(v + 0.1, i, str(int(v)), color='black', va='center')
-
         plt.tight_layout()
         nome_arquivo = f'{OUTPUT_DIR}/bigramas_{channel_name_safe}_{tipo_eng}_{periodo_str}.png'
         plt.savefig(nome_arquivo, dpi=300, bbox_inches='tight')
         plt.close()
-        
         print(f"Gráfico de bigramas salvo como '{nome_arquivo}'")
+        # Salva também como txt
+        txt_arquivo = nome_arquivo.replace('.png', '.txt')
+        df_bigramas.to_csv(txt_arquivo, sep='\t', index=False)
+        print(f"Bigramas salvos em '{txt_arquivo}'")
         return df_bigramas
 
     analisar_visualizar_bigramas(df_alto_eng, "VÍDEOS DE ALTO ENGAJAMENTO", "alto")
@@ -342,7 +346,9 @@ def analisar_bigramas_por_engajamento(df_analise, channel_name, periodo_str):
 
 def analisar_topicos_lda(df_analise, entity_name, periodo_str):
     """Executa a análise de tópicos (LDA) e engajamento por tópico."""
-    entity_name_safe = entity_name.replace(" ", "_").replace("/", "-")
+    if entity_name is None:
+        entity_name = ""
+    entity_name_safe = str(entity_name).replace(" ", "_").replace("/", "-")
     print(f"\n{'='*60}")
     print(f"Análise Temática (LDA) para: {entity_name} (Período: {periodo_str})")
     print(f"{'='*60}")
@@ -401,27 +407,27 @@ def analisar_topicos_lda(df_analise, entity_name, periodo_str):
         plt.title(f'Engajamento Médio por Tópico - {entity_name}\nPeríodo: {periodo_str}', fontsize=18, pad=20)
         plt.xlabel('Visualizações Médias', fontsize=14)
         plt.ylabel('Tópico (Top 3 Palavras)', fontsize=14)
-
         for i, row in enumerate(engajamento_por_topico.itertuples()):
             label_text = f'{int(row.viewCount):,} views ({row.num_videos} vídeos)'
             ax.text(row.viewCount, i, f' {label_text}', color='black', va='center', fontsize=11)
-
         plt.xlim(right=ax.get_xlim()[1] * 1.25)
         plt.tight_layout()
         engajamento_arquivo = f'{OUTPUT_DIR}/engajamento_topicos_{entity_name_safe}_{periodo_str}.png'
         plt.savefig(engajamento_arquivo, dpi=300, bbox_inches='tight')
         plt.close()
-        
         print(f"\nVisualização de engajamento por tópico salva em: {engajamento_arquivo}")
         print("\n--- Engajamento Médio por Tópico ---")
         print(engajamento_por_topico.round(0))
-    
+        # Salva também como txt
+        txt_arquivo = engajamento_arquivo.replace('.png', '.txt')
+        engajamento_por_topico.to_csv(txt_arquivo, sep='\t')
+        print(f"Engajamento por tópico salvo em '{txt_arquivo}'")
     except Exception as e:
         print(f"Erro durante a análise LDA: {e}")
         print("Não foi possível gerar a análise de tópicos para este conjunto de dados.")
 
 def analisar_periodo(df_periodo, nome_periodo):
-    """Função principal para analisar um período de tempo."""
+    """Função principal para analisar um período de tempo para o canal específico."""
     print(f"\n\n{'#'*80}")
     print(f"INICIANDO ANÁLISE PARA O PERÍODO: {nome_periodo}")
     print(f"Total de vídeos no período: {len(df_periodo)}")
@@ -431,36 +437,70 @@ def analisar_periodo(df_periodo, nome_periodo):
         print("Nenhum dado para analisar neste período.")
         return
 
-    # 1. Análise Geral (todos os canais juntos)
-    print("\n--- ANÁLISE GERAL DO PERÍODO ---")
-    analisar_topicos_lda(df_periodo, "TODOS_OS_CANAIS", nome_periodo)
-    analisar_bigramas_por_engajamento(df_periodo, "TODOS_OS_CANAIS", nome_periodo)
+    # Análise para o canal específico
+    print(f"\n--- ANÁLISE PARA O CANAL: {CANAL_ESPECIFICO_NOME} ---")
+    analisar_topicos_lda(df_periodo, CANAL_ESPECIFICO_NOME, nome_periodo)
+    analisar_bigramas_por_engajamento(df_periodo, CANAL_ESPECIFICO_NOME, nome_periodo)
+    if len(df_periodo) >= 3:
+        analyze_clusters(df_periodo, CANAL_ESPECIFICO_NOME, nome_periodo)
 
-    # 2. Análise por Canal
-    print("\n--- ANÁLISE INDIVIDUAL POR CANAL ---")
-    channel_ids = df_periodo['channelId'].unique()
-    for channel_id in channel_ids:
-        channel_name = get_channel_name(channel_id)
-        df_canal_periodo = df_periodo[df_periodo['channelId'] == channel_id]
-        
-        print(f"\n>>> Analisando Canal: {channel_name} ({len(df_canal_periodo)} vídeos) <<<")
-        
-        # Análise de Tópicos e Engajamento para o canal (agora funciona com 1 vídeo)
-        analisar_topicos_lda(df_canal_periodo, channel_name, nome_periodo)
-        
-        # Análise de Bigramas por engajamento para o canal (agora funciona com 1 vídeo)
-        analisar_bigramas_por_engajamento(df_canal_periodo, channel_name, nome_periodo)
-        
-        # Removido: Análise de Clustering para o canal (DBSCAN/KMeans)
-        # if len(df_canal_periodo) >= 3:
-        #     analyze_clusters(df_canal_periodo, channel_name, nome_periodo)
+# --- FUNÇÃO DE CLUSTERIZAÇÃO ---
+
+def analyze_clusters(df, channel_name, periodo_str):
+    """Executa análise de clusters nos vídeos do canal para o período especificado."""
+    channel_name_safe = channel_name.replace(" ", "_").replace("/", "-")
+    print(f"\n{'='*60}")
+    print(f"Análise de Clusters para: {channel_name} (Período: {periodo_str})")
+    print(f"{'='*60}")
+
+    # Seleciona as métricas para clusterização
+    metricas = ['viewCount', 'likeCount', 'commentCount']
+    df_metrics = df[metricas].copy()
+    df_metrics = df_metrics.dropna()
+
+    if df_metrics.shape[0] < 3:
+        print("Dados insuficientes para clusterização.")
+        return
+
+    # Normaliza os dados
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df_metrics)
+
+    # Determina número de clusters (máximo 3 ou menos se poucos vídeos)
+    n_clusters = min(3, df_metrics.shape[0])
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    cluster_labels = kmeans.fit_predict(X_scaled)
+
+    df['cluster'] = cluster_labels
+
+    # Visualização dos clusters
+    plt.figure(figsize=(10, 7))
+    palette = sns.color_palette(PALETTE, n_clusters)
+    for i in range(n_clusters):
+        cluster_data = df[df['cluster'] == i]
+        plt.scatter(cluster_data['viewCount'], cluster_data['likeCount'], 
+                    s=80, label=f'Cluster {i}', color=palette[i])
+
+    plt.xlabel('Visualizações')
+    plt.ylabel('Likes')
+    plt.title(f'Clusters de Engajamento - {channel_name}\nPeríodo: {periodo_str}', fontsize=16)
+    plt.legend()
+    plt.tight_layout()
+    nome_arquivo = f'{OUTPUT_DIR}/clusters_{channel_name_safe}_{periodo_str}.png'
+    plt.savefig(nome_arquivo, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Gráfico de clusters salvo como '{nome_arquivo}'")
+    # Salva também os dados dos clusters como txt
+    txt_arquivo = nome_arquivo.replace('.png', '.txt')
+    df[['viewCount', 'likeCount', 'commentCount', 'cluster']].to_csv(txt_arquivo, sep='\t', index=False)
+    print(f"Dados dos clusters salvos em '{txt_arquivo}'")
 
 # --- ESTRUTURA PRINCIPAL DA ANÁLISE ---
 
 # Define os períodos de análise
 periodos = {
     "Parte1_Nov-Dez_2022": ('2022-11-01', '2022-12-31'),
-    "Parte2_7-15_Jan_2023": ('2023-01-06', '2023-01-18'),
+    "Parte2_7-18_Jan_2023": ('2023-01-06', '2023-01-18'),
     "Parte3_16-Jan_2023_em_diante": ('2023-01-19', '2023-03-01') # Limite superior generoso
 }
 
@@ -468,9 +508,7 @@ periodos = {
 for nome_periodo, (data_inicio, data_fim) in periodos.items():
     # Filtra o DataFrame principal para o período atual
     df_periodo = df[(df['publishedAt'] >= data_inicio) & (df['publishedAt'] <= data_fim)].copy()
-    
     # Chama a função de análise para o DataFrame filtrado
     analisar_periodo(df_periodo, nome_periodo)
-
 
 print("\nAnálise concluída! Todas as visualizações foram salvas em", OUTPUT_DIR)

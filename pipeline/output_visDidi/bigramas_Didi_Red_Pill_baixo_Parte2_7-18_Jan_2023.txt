@@ -1,0 +1,16 @@
+Bigrama	Frequência
+presidente bolsonaro	2
+fala certeza	1
+certeza conhecem	1
+conhecem senadora	1
+senadora soraia	1
+soraia tronic	1
+tronic traiu	1
+traiu presidente	1
+bolsonaro candidata	1
+candidata presidenta	1
+presidenta contra	1
+contra próprio	1
+próprio presidente	1
+presidente mulherzinha	1
+mulherzinha mostrou	1

@@ -1,0 +1,3 @@
+topico_dominante	viewCount	likeCount	commentCount	num_videos	topic_label
+0	91760.5	16284.5	2336.0	2	Tópico 0: assim, trânsito, bem
+1	54186.4	8130.8	731.6	5	Tópico 1: então, quebra, qualquer
