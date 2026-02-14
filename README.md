@@ -108,7 +108,7 @@ python pipeline/canalEspecifico.py
 
 ## Diagrama ER
 
-![ER Diagram](/assets/ER_Diagram.png)
+![ER Diagram](/assets/ER_Diagram.jpeg)
 
 
 ## Licença e citação
