@@ -5,8 +5,8 @@ from typing import Tuple, Optional
 try:
     from data.transcriptions.transcript import get_transcript, format_transcript_from_api as format_transcript_text
     TRANSCRIPT_AVAILABLE = True
-except ImportError:
-    logging.error("Failed to import transcript module. Transcript functionality will be disabled.")
+except ImportError as exc:
+    logging.exception("Failed to import transcript module. Transcript functionality will be disabled.")
     TRANSCRIPT_AVAILABLE = False
     
 class TranscriptService:

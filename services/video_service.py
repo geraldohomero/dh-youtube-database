@@ -52,7 +52,7 @@ class VideoProcessingService:
         self.youtube_client = YouTubeAPIClient()
         self.db_manager = DatabaseManager()
         self.transcript_service = TranscriptService()
-        self.max_workers = 5
+        self.max_workers = 7
 
     def process_video_details(self, video_id: str, channel_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -120,7 +120,7 @@ class VideoProcessingService:
         processed_count = 0
         
         # Processar em lotes para controlar a memória
-        batch_size = 5
+        batch_size = 7
         for i in range(0, len(videos_to_process), batch_size):
             batch = videos_to_process[i:i+batch_size]
             logging.info(f"Processing batch {i//batch_size + 1} with {len(batch)} videos")
