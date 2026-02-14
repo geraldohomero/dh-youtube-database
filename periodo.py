@@ -4,7 +4,7 @@ import time
 import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from tqdm import tqdm
 
 # Adiciona o diretório raiz ao path para permitir importações dos módulos do projeto
@@ -208,12 +208,21 @@ def main():
 
                             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                                 futures = [executor.submit(_build_video_data, item) for item in items]
-                                for future in as_completed(futures):
-                                    try:
-                                        prepared_videos.append(future.result())
-                                        log_activity()
-                                    except Exception as e:
-                                        logging.error(f"Erro no processamento paralelo de vídeo: {e}")
+                                try:
+                                    for future in as_completed(futures, timeout=INACTIVITY_TIMEOUT):
+                                        try:
+                                            prepared_videos.append(future.result())
+                                            log_activity()
+                                        except Exception as e:
+                                            logging.error(f"Erro no processamento paralelo de vídeo: {e}")
+                                except FuturesTimeoutError:
+                                    logging.warning(
+                                        "Timeout de inatividade durante processamento paralelo de transcrições. "
+                                        "Cancelando tarefas pendentes e reiniciando..."
+                                    )
+                                    for f in futures:
+                                        f.cancel()
+                                    raise TimeoutError("Inatividade detectada durante processamento de transcrições.")
 
                             # Escrita no banco permanece serial (mais seguro)
                             for video_data in prepared_videos:

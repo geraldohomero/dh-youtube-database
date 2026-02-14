@@ -1,6 +1,29 @@
 import logging
 import time
+import requests
 from typing import Tuple, Optional
+from requests.adapters import HTTPAdapter
+from requests.exceptions import ProxyError, SSLError, ReadTimeout, ConnectTimeout, RequestException
+from urllib3.util.retry import Retry
+
+HTTP_TIMEOUT = (8, 20)  # connect, read
+PROXY_RETRY_TOTAL = 2
+
+def _build_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=PROXY_RETRY_TOTAL,
+        connect=PROXY_RETRY_TOTAL,
+        read=0,  # não ficar preso em read retry
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=None,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=20, pool_maxsize=20)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 try:
     from data.transcriptions.transcript import get_transcript, format_transcript_from_api as format_transcript_text
@@ -24,6 +47,18 @@ class TranscriptService:
         """
         if not self.available:
             return False, "Transcript functionality not available", None
+        
+        try:
+            # em toda chamada HTTP:
+            # response = self.session.get(url, params=params, proxies=proxies, timeout=HTTP_TIMEOUT)
+            # response.raise_for_status()
+            pass
+        except (ProxyError, SSLError, ReadTimeout, ConnectTimeout) as e:
+            logging.warning(f"Falha de proxy/rede para {video_id}: {e}")
+            return False, None, None
+        except RequestException as e:
+            logging.warning(f"Erro HTTP para {video_id}: {e}")
+            return False, None, None
         
         try:
             success, transcript_text, transcript_lang = get_transcript(video_id)
