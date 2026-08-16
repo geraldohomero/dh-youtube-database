@@ -24,7 +24,7 @@ Principais objetivos:
 - Coleta (scraping/API) com Python e YouTube Data API v3.
 
 ### Referências
-
+- [Webshare](https://www.webshare.io/?referral_code=hbhxu3t9midx)
 - [Whisper](https://openai.com/index/whisper/)
 - [GitHub Whisper](https://github.com/openai/whisper)
 - [WhisperCPP](https://github.com/ggerganov/whisper.cpp) 
