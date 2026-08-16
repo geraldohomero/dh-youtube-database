@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 from youtube_transcript_api.proxies import WebshareProxyConfig
+import random
 
 # ANSI color codes for terminal output
 GREEN = '\033[92m'
@@ -82,7 +83,7 @@ def get_videos_needing_transcript() -> list:
     """Retrieve the list of videoIds that need transcription."""
     with sqlite3.connect(DB_CONFIG) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT videoId FROM Videos WHERE videoTranscript IS NULL ORDER BY rowid DESC")
+        cursor.execute("SELECT videoId FROM Videos WHERE videoTranscript IS NULL OR videoTranscript = '' ORDER BY rowid ASC")
         video_ids = [row[0] for row in cursor.fetchall()]
     return video_ids
 
@@ -118,38 +119,47 @@ def transcript_exists(video_id: str) -> bool:
 
 def get_transcript(video_id: str) -> tuple:
     """
-    Get transcript for a video using YouTube Transcript API with Webshare proxy.
-    
     Returns:
         (success, transcript_text, language)
     """
-    # First quickly check if transcript exists using the API
-    if not transcript_exists(video_id):
-        logging.info(f"No transcript available for {video_id} (API check)")
-        return False, "No transcript available for this video", None
-    
-    try:
-        logging.info(f"Getting transcript for {video_id} using YouTube API with Webshare proxy")
-        
-        # Create API instance with proxy
-        ytt_api = create_youtube_api()
-        
-        # Fetch transcript with preference for Portuguese then English
-        transcript = ytt_api.fetch(video_id, languages=['pt', 'pt-BR', 'en'])
-        
-        if not transcript or not hasattr(transcript, 'snippets'):
-            return False, "Failed to fetch transcript data", None
-        
-        # Format the transcript into text
-        formatted_transcript = format_transcript_from_api(transcript)
-        
-        return True, formatted_transcript, transcript.language_code
-        
-    except (NoTranscriptFound, TranscriptsDisabled):
-        return False, "No transcript available for this video", None
-    except Exception as e:
-        logging.error(f"Error getting transcript for {video_id}: {e}")
-        return False, f"Error: {str(e)}", None
+    ytt_api = create_youtube_api()
+
+    max_attempts = 5
+    base_delay = 2.0
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logging.info(f"Getting transcript for {video_id} (attempt {attempt}/{max_attempts})")
+            transcript = ytt_api.fetch(video_id, languages=['pt', 'pt-BR', 'en'])
+
+            if not transcript or not hasattr(transcript, 'snippets'):
+                return False, "Failed to fetch transcript data", None
+
+            formatted_transcript = format_transcript_from_api(transcript)
+            return True, formatted_transcript, transcript.language_code
+
+        except (NoTranscriptFound, TranscriptsDisabled):
+            return False, "No transcript available for this video", None
+        except Exception as e:
+            error_msg = str(e).lower()
+
+            # bloqueios/rate-limit típicos
+            retryable = (
+                "429" in error_msg
+                or "too many requests" in error_msg
+                or "/sorry/" in error_msg
+                or "temporarily blocked" in error_msg
+            )
+
+            if attempt == max_attempts or not retryable:
+                logging.error(f"Error getting transcript for {video_id}: {e}")
+                return False, f"Error: {str(e)}", None
+
+            sleep_s = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1.0)
+            logging.warning(
+                f"Rate-limit/block detected for {video_id}. Retrying in {sleep_s:.1f}s..."
+            )
+            time.sleep(sleep_s)
 
 def format_transcript_from_api(transcript) -> str:
     """
@@ -237,88 +247,95 @@ def update_video_transcript(conn, video_id: str, transcript_text: str, language_
         else:
             raise
 
-def process_video_transcript(video_id: str) -> tuple:
+def fetch_transcript_worker(video_id: str) -> tuple:
     """
-    Process a single video: download transcript and update database.
-    Returns tuple of (success, message)
+    Download transcript for a single video using the YouTube API with Webshare proxy.
+    Returns a tuple of (video_id, success, transcript_text, language)
     """
     try:
-        # Each thread needs its own DB connection
-        conn = sqlite3.connect(DB_CONFIG)
-        
-        # Check if transcript already exists in DB
-        cursor = conn.cursor()
-        cursor.execute("SELECT videoTranscript FROM Videos WHERE videoId = ?", (video_id,))
-        row = cursor.fetchone()
-        if row and row[0]:
-            return True, f"Transcript already exists for video {video_id}"
-        
-        # Download transcript using YouTube API with Webshare proxy
         success, transcript_text, language = get_transcript(video_id)
-        if not success:
-            return False, transcript_text  # contains error message
-        
-        # Update database with the transcript
-        update_video_transcript(conn, video_id, transcript_text, language)
-        
-        # Success message (will be colored green by the formatter)
-        return True, f"Downloaded and stored {language} transcript for video {video_id} using YouTube API"
+        return video_id, success, transcript_text, language
     except Exception as e:
-        return False, f"Error processing transcript for video {video_id}: {str(e)}"
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
+        return video_id, False, f"Error: {str(e)}", None
 
 def main():
     logging.info("Starting transcript download script using YouTube API with Webshare proxy.")
     video_ids = get_videos_needing_transcript()
     total_videos = len(video_ids)
     logging.info("Total videos to process: %d", total_videos)
-    logging.info("Processing videos from newest to oldest")
+    logging.info("Processing videos from oldest to newest")
     start_time = time.time()
     processed_count = 0
     
-    # Use a thread pool with reduced workers to avoid overwhelming the system
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        # Submit all tasks to the executor
-        future_to_video = {
-            executor.submit(process_video_transcript, video_id): video_id 
-            for video_id in video_ids
-        }
-        
-        # Process results as they complete
-        for future in concurrent.futures.as_completed(future_to_video):
-            video_id = future_to_video[future]
-            processed_count += 1
-            
-            try:
-                success, message = future.result()
-                if success:
-                    # Success messages will be colored green by the formatter
-                    logging.info("[%d/%d] %s", processed_count, total_videos, message)
-                else:
-                    logging.warning("[%d/%d] %s", processed_count, total_videos, message)
-            except Exception as e:
-                logging.error("[%d/%d] Unexpected error with video %s: %s", 
-                              processed_count, total_videos, video_id, str(e))
-            
-            # Calculate and show progress
-            elapsed = time.time() - start_time
-            if processed_count > 0:
-                avg_time = elapsed / processed_count
-                estimated_total = avg_time * total_videos
-                estimated_remaining = estimated_total - elapsed
-                logging.info(
-                    "Progress: %d/%d (%.1f%%). Est. total time: %s, Est. remaining: %s",
-                    processed_count,
-                    total_videos,
-                    (processed_count/total_videos)*100,
-                    format_duration(estimated_total),
-                    format_duration(estimated_remaining)
-                )
+    # Establish a single database connection for sequential writing
+    conn = sqlite3.connect(DB_CONFIG)
     
-    logging.info("Script completed. Processed %d videos in %s", 
-                 total_videos, format_duration(time.time() - start_time))
+    try:
+        # Use a thread pool with 10 workers to fetch transcripts in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all tasks to the executor
+            future_to_video = {
+                executor.submit(fetch_transcript_worker, video_id): video_id 
+                for video_id in video_ids
+            }
+            
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_video):
+                processed_count += 1
+                video_id = future_to_video[future]
+                
+                try:
+                    _, success, transcript_text, language = future.result()
+                    
+                    if success:
+                        # Write to database sequentially
+                        update_video_transcript(conn, video_id, transcript_text, language)
+                        logging.info("[%d/%d] Downloaded and stored %s transcript for video %s using YouTube API", 
+                                     processed_count, total_videos, language, video_id)
+                    else:
+                        # Handle failures/unavailable videos by writing to DB sequentially
+                        if transcript_text == "No transcript available for this video":
+                            update_video_transcript(conn, video_id, "ND", "ND")
+                            logging.info("[%d/%d] No transcript available for video %s. Marked as 'ND' in DB.", 
+                                         processed_count, total_videos, video_id)
+                        elif "the video is no longer available" in transcript_text.lower():
+                            update_video_transcript(conn, video_id, "The video is no longer available", "unavailable")
+                            logging.info("[%d/%d] Video %s is no longer available. Marked in DB.", 
+                                         processed_count, total_videos, video_id)
+                        elif "this video is private" in transcript_text.lower():
+                            update_video_transcript(conn, video_id, "This video is private", "unavailable")
+                            logging.info("[%d/%d] Video %s is private. Marked in DB.", 
+                                         processed_count, total_videos, video_id)
+                        elif "age-restricted" in transcript_text.lower():
+                            update_video_transcript(conn, video_id, "This video is age-restricted", "unavailable")
+                            logging.info("[%d/%d] Video %s is age-restricted. Marked in DB.", 
+                                         processed_count, total_videos, video_id)
+                        else:
+                            logging.warning("[%d/%d] Error getting transcript for video %s: %s", 
+                                            processed_count, total_videos, video_id, transcript_text)
+                            
+                except Exception as e:
+                    logging.error("[%d/%d] Unexpected error with video %s: %s", 
+                                  processed_count, total_videos, video_id, str(e))
+                
+                # Calculate and show progress
+                elapsed = time.time() - start_time
+                if processed_count > 0:
+                    avg_time = elapsed / processed_count
+                    estimated_total = avg_time * total_videos
+                    estimated_remaining = estimated_total - elapsed
+                    logging.info(
+                        "Progress: %d/%d (%.1f%%). Est. total time: %s, Est. remaining: %s",
+                        processed_count,
+                        total_videos,
+                        (processed_count/total_videos)*100,
+                        format_duration(estimated_total),
+                        format_duration(estimated_remaining)
+                    )
+    finally:
+        conn.close()
+        logging.info("Script completed. Processed %d videos in %s", 
+                     total_videos, format_duration(time.time() - start_time))
 
 if __name__ == "__main__":
     main()

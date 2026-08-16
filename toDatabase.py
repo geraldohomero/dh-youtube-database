@@ -29,6 +29,7 @@ def main():
         try:
             # Ensure database schema is up to date
             db_manager.ensure_transcript_column_exists(cursor)
+            db_manager.ensure_video_length_column_exists(cursor)
             conn.commit()
                 
             # Fetch all existing video IDs at once for fast lookups

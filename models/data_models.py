@@ -14,6 +14,7 @@ class VideoData:
     channelId: str
     videoTitle: str
     videoAudio: Optional[str]
+    videoLength: Optional[int]
     videoTranscript: Optional[str]
     transcriptLanguage: Optional[str]
     viewCount: int

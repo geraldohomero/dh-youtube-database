@@ -1,5 +1,6 @@
 import logging
 import time
+import re
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -12,6 +13,25 @@ from models.data_models import ChannelDetails
 class YouTubeAPIClient:
     def __init__(self):
         self.youtube = build('youtube', 'v3', developerKey=get_api_key())
+
+    @staticmethod
+    def parse_iso8601_duration_to_seconds(duration: str) -> int:
+        """
+        Parse YouTube ISO8601 duration (e.g., PT1H2M10S) to total seconds.
+        Returns 0 if value is missing or invalid.
+        """
+        if not duration or not isinstance(duration, str):
+            return 0
+
+        pattern = r'^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$'
+        match = re.match(pattern, duration)
+        if not match:
+            return 0
+
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or 0)
+        seconds = int(match.group(3) or 0)
+        return hours * 3600 + minutes * 60 + seconds
     
     def safe_execute(self, request) -> Dict[str, Any]:
         """
@@ -66,7 +86,7 @@ class YouTubeAPIClient:
             channel_id = channel_id.strip() if channel_id else channel_id
             
             request = self.youtube.videos().list(
-                part="snippet,statistics",
+                part="snippet,statistics,contentDetails",
                 id=video_id
             )
             response = self.safe_execute(request)
@@ -74,12 +94,15 @@ class YouTubeAPIClient:
                 video = response['items'][0]
                 published_at = datetime.strptime(video['snippet']['publishedAt'], '%Y-%m-%dT%H:%M:%SZ')
                 comments_enabled = 'commentCount' in video['statistics']
+                duration_iso = video.get('contentDetails', {}).get('duration', '')
+                video_length = self.parse_iso8601_duration_to_seconds(duration_iso)
                 
                 return {
                     'videoId': video_id,
                     'channelId': channel_id,
                     'videoTitle': video['snippet']['title'],
                     'videoAudio': None,
+                    'videoLength': video_length,
                     'viewCount': int(video['statistics'].get('viewCount', 0)),
                     'likeCount': int(video['statistics'].get('likeCount', 0)),
                     'commentCount': int(video['statistics']['commentCount']) if comments_enabled else 0,
@@ -92,6 +115,40 @@ class YouTubeAPIClient:
         except Exception as e:
             logging.error("Error fetching video details for video id %s: %s", video_id, e)
             return None
+
+    def get_video_lengths_batch(self, video_ids: List[str]) -> Dict[str, int]:
+        """
+        Fetch video durations for up to 50 video IDs in one API request.
+        Returns a dictionary {videoId: duration_in_seconds}.
+        """
+        if not video_ids:
+            return {}
+
+        cleaned_ids = [video_id.strip() for video_id in video_ids if video_id and video_id.strip()]
+        if not cleaned_ids:
+            return {}
+
+        if len(cleaned_ids) > 50:
+            raise ValueError("YouTube API accepts at most 50 IDs per videos.list request")
+
+        try:
+            request = self.youtube.videos().list(
+                part="contentDetails",
+                id=",".join(cleaned_ids),
+                maxResults=50
+            )
+            response = self.safe_execute(request)
+
+            durations: Dict[str, int] = {}
+            for item in response.get('items', []):
+                vid = item.get('id')
+                duration_iso = item.get('contentDetails', {}).get('duration', '')
+                durations[vid] = self.parse_iso8601_duration_to_seconds(duration_iso)
+
+            return durations
+        except Exception as e:
+            logging.error("Error fetching batch video durations: %s", e)
+            return {}
 
     def get_video_comments(self, video_id: str) -> List[Dict[str, Any]]:
         """

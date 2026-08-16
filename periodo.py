@@ -46,12 +46,15 @@ def _build_video_data(item: dict) -> dict:
     # Instância por thread (evita compartilhamento de estado)
     transcript_service = TranscriptService()
     success, transcript_text, transcript_lang = transcript_service.get_transcript_with_retry(video_id)
+    duration_iso = item.get('contentDetails', {}).get('duration', '')
+    video_length = YouTubeAPIClient.parse_iso8601_duration_to_seconds(duration_iso)
 
     return {
         'videoId': video_id,
         'channelId': item['snippet']['channelId'],
         'videoTitle': item['snippet']['title'],
         'videoAudio': None,
+        'videoLength': video_length,
         'videoTranscript': transcript_text if success else None,
         'viewCount': int(item['statistics'].get('viewCount', 0)),
         'likeCount': int(item['statistics'].get('likeCount', 0)),
@@ -97,13 +100,12 @@ def main():
     
     logging.info(f"Iniciando busca de vídeos publicados entre {START_DATE} e {END_DATE}")
 
-    transcript_service = TranscriptService()
-
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         try:
             # Garante que a estrutura do banco está correta
             db_manager.ensure_transcript_column_exists(cursor)
+            db_manager.ensure_video_length_column_exists(cursor)
             conn.commit()
             log_activity()
                 
@@ -182,7 +184,7 @@ def main():
                     logging.info(f"Total de vídeos processados para o canal {channel_id}: 0")
                     continue
 
-                batch_size = 15
+                batch_size = 10
                 with tqdm(total=total_to_insert, desc=f"Canal {channel_id}", unit="vídeo") as pbar:
                     for i in range(0, total_to_insert, batch_size):
                         if check_timeout():

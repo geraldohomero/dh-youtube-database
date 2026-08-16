@@ -27,6 +27,14 @@ class DatabaseManager:
         except sqlite3.OperationalError:
             logging.info("Adding transcriptLanguage column to Videos table")
             cursor.execute("ALTER TABLE Videos ADD COLUMN transcriptLanguage TEXT")
+
+    def ensure_video_length_column_exists(self, cursor: sqlite3.Cursor) -> None:
+        """Ensure the videoLength column exists in the Videos table."""
+        try:
+            cursor.execute("SELECT videoLength FROM Videos LIMIT 1")
+        except sqlite3.OperationalError:
+            logging.info("Adding videoLength column to Videos table")
+            cursor.execute("ALTER TABLE Videos ADD COLUMN videoLength INTEGER")
     
     def insert_channel_details(self, channel: ChannelDetails) -> None:
         """
@@ -78,15 +86,16 @@ class DatabaseManager:
 
             # Check if transcriptLanguage column exists, add it if missing
             self.ensure_transcript_column_exists(cursor)
+            self.ensure_video_length_column_exists(cursor)
                 
             # Update Videos table with transcript information
             cursor.execute("""
                 INSERT INTO Videos (
                     videoId, channelId, videoTitle, videoAudio, videoTranscript,
                     viewCount, likeCount, commentCount, publishedAt, collectedDate,
-                    transcriptLanguage
+                    transcriptLanguage, videoLength
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(videoId) DO UPDATE SET
                     videoTitle = excluded.videoTitle,
                     viewCount = excluded.viewCount,
@@ -94,7 +103,8 @@ class DatabaseManager:
                     commentCount = excluded.commentCount,
                     collectedDate = excluded.collectedDate,
                     videoTranscript = COALESCE(excluded.videoTranscript, videoTranscript),
-                    transcriptLanguage = COALESCE(excluded.transcriptLanguage, transcriptLanguage)
+                    transcriptLanguage = COALESCE(excluded.transcriptLanguage, transcriptLanguage),
+                    videoLength = COALESCE(excluded.videoLength, videoLength)
             """, (
                 video_data['videoId'],
                 video_data['channelId'],
@@ -106,7 +116,8 @@ class DatabaseManager:
                 video_data['commentCount'],
                 video_data['publishedAt'],
                 video_collected_date,
-                video_data.get('transcriptLanguage')
+                video_data.get('transcriptLanguage'),
+                video_data.get('videoLength')
             ))
             
             # Insert Comments and Replies

@@ -14,6 +14,7 @@ CREATE TABLE Videos (
     channelId VARCHAR(255),
     videoTitle VARCHAR(255) NOT NULL,
     videoAudio TEXT,                     -- Path/URL to audio file
+    videoLength INT,                     -- Duration in seconds
     videoTranscript TEXT,                -- Whisper-generated transcript
     viewCount INT,
     likeCount INT,
