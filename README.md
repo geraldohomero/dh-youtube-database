@@ -1,6 +1,6 @@
 ## Digital Humanities YouTube Research Database (PhD Research Proposal)
 
-[![DOI](https://zenodo.org/badge/929105417.svg)](https://doi.org/10.5281/zenodo.15258448)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18644403.svg)](https://doi.org/10.5281/zenodo.18644403)
 
 Projeto de pesquisa desenvolvido como parte da minha tese de doutorado sendo realizada no [Programa de Pós-Graduação em Ciência Política](https://www.ifch.unicamp.br/pos/ciencia-politica) da Universidade Estadual de Campinas (Unicamp). O projeto é
 financiado pelo [Conselho Nacional de Desenvolvimento Científico e Tecnológico (CNPq)](https://cnpq.br), Brasil.
